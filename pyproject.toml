@@ -1,0 +1,114 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+version = "0.1.0"
+name = "cse151b_comp"
+description = "CSE 151B Spring 2026 Math Reasoning Competition"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Jason Yu", email = "yuj543226@gmail.com" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+# Core runtime dependencies
+dependencies = [
+    "transformers>=4.56,<5",
+    "sympy>=1.13",
+    "numpy>=1.26",
+    "bitsandbytes>=0.43",
+    "accelerate>=0.34",
+    "antlr4-python3-runtime==4.11.1",
+    "tqdm>=4.66",
+    "ipykernel>=6.29",
+    "jupyter>=1.0",
+    # torch is intentionally NOT here — select a cuda extra below
+]
+
+# ==============================================================================
+# OPTIONAL DEPENDENCIES
+# ==============================================================================
+[project.optional-dependencies]
+
+dev = ["pytest>=8.0", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.7", "nbstripout>=0.7"]
+
+# vLLM path (Phase 2) — separate venv recommended due to version pinning
+vllm = ["vllm>=0.20", "transformers>=4.56,<5"]
+
+# QLoRA training (Phase 4)
+train = ["peft>=0.12", "datasets>=2.20", "trl>=0.10", "wandb"]
+
+# PyTorch — pick one based on your CUDA
+cu126 = ["torch>=2.6", "torchvision", "torchaudio"]
+cu128 = ["torch>=2.6", "torchvision", "torchaudio"]
+
+# ==============================================================================
+# ENTRY POINTS
+# ==============================================================================
+[project.scripts]
+cse151b-run = "cse151b_comp.runner:main"
+cse151b-analyze = "cse151b_comp.analyze:main"
+cse151b-split = "cse151b_comp.dev_split:main"
+
+# ==============================================================================
+# UV — PYTORCH INDEX SOURCES
+# ==============================================================================
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url  = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url  = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "cu126" },
+        { extra = "cu128" },
+    ],
+]
+
+# ==============================================================================
+# UV — DEPENDENCY SOURCES
+# ==============================================================================
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu128", extra = "cu128" },
+]
+torchvision = [
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu128", extra = "cu128" },
+]
+torchaudio = [
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu128", extra = "cu128" },
+]
+
+# ==============================================================================
+# TOOL CONFIGS
+# Hatchling ignores all [tool.*] except [tool.hatch.*]
+# ==============================================================================
+[tool.hatch.build.targets.wheel]
+packages = ["src/cse151b_comp"]
+
+[tool.ruff]
+line-length = 120
+lint.select = ["E", "F", "I"]
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-v --tb=short"
