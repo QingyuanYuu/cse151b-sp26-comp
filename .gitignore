@@ -99,6 +99,9 @@ results/
 # Local-only dataset splits (keep public.jsonl committed)
 data/dev_*.jsonl
 
+# Kaggle test set — re-download per user via Kaggle CLI; don't redistribute
+data/private.jsonl
+
 # Model artifacts (use HuggingFace cache, don't commit weights)
 *.safetensors
 *.bin

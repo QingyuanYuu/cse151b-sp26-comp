@@ -52,9 +52,12 @@ cu128 = ["torch>=2.6", "torchvision", "torchaudio"]
 # ENTRY POINTS
 # ==============================================================================
 [project.scripts]
-cse151b-run = "cse151b_comp.runner:main"
-cse151b-analyze = "cse151b_comp.analyze:main"
-cse151b-split = "cse151b_comp.dev_split:main"
+cse151b-infer = "cse151b_comp.inference:main"
+cse151b-evaluate = "cse151b_comp.evaluate:main"
+cse151b-analyze = "cse151b_comp.error_analysis:main"
+cse151b-submit = "cse151b_comp.submission:main"
+cse151b-split = "cse151b_comp.eval_harness:make_split_main"
+cse151b-compare = "cse151b_comp.eval_harness:compare_main"
 
 # ==============================================================================
 # UV — PYTORCH INDEX SOURCES
