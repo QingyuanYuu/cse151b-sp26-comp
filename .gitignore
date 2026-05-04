@@ -113,3 +113,18 @@ wandb/
 mlruns/
 lightning_logs/
 runs/
+
+# Inference / batch-job logs
+logs/
+
+# LaTeX backup copies and build artefacts (keep main.tex + references.bib + main.pdf only)
+templates/milestone-report/main_teammate.tex
+templates/milestone-report/main_template.tex
+templates/milestone-report/*.aux
+templates/milestone-report/*.log
+templates/milestone-report/*.out
+templates/milestone-report/*.bbl
+templates/milestone-report/*.blg
+templates/milestone-report/*.synctex.gz
+templates/milestone-report/*.fdb_latexmk
+templates/milestone-report/*.fls

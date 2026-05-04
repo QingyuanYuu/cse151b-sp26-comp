@@ -1,0 +1,235 @@
+{
+  "n_total": 225,
+  "n_correct": 127,
+  "overall_acc": 0.5644444444444444,
+  "by_type": {
+    "free_single": {
+      "n": 67,
+      "correct": 42,
+      "acc": 0.6268656716417911
+    },
+    "free_multi": {
+      "n": 83,
+      "correct": 40,
+      "acc": 0.4819277108433735
+    },
+    "mcq": {
+      "n": 75,
+      "correct": 45,
+      "acc": 0.6
+    }
+  },
+  "by_topic": {
+    "other": {
+      "n": 157,
+      "correct": 93,
+      "acc": 0.5923566878980892
+    },
+    "calculus": {
+      "n": 10,
+      "correct": 7,
+      "acc": 0.7
+    },
+    "geometry": {
+      "n": 21,
+      "correct": 11,
+      "acc": 0.5238095238095238
+    },
+    "linalg": {
+      "n": 6,
+      "correct": 3,
+      "acc": 0.5
+    },
+    "series": {
+      "n": 13,
+      "correct": 4,
+      "acc": 0.3076923076923077
+    },
+    "probability": {
+      "n": 16,
+      "correct": 8,
+      "acc": 0.5
+    },
+    "ode": {
+      "n": 1,
+      "correct": 1,
+      "acc": 1.0
+    },
+    "complex": {
+      "n": 1,
+      "correct": 0,
+      "acc": 0.0
+    }
+  },
+  "by_length": {
+    "short(<150)": {
+      "n": 59,
+      "correct": 40,
+      "acc": 0.6779661016949152
+    },
+    "long(500-1500)": {
+      "n": 39,
+      "correct": 13,
+      "acc": 0.3333333333333333
+    },
+    "medium(150-500)": {
+      "n": 119,
+      "correct": 72,
+      "acc": 0.6050420168067226
+    },
+    "vlong(>=1500)": {
+      "n": 8,
+      "correct": 2,
+      "acc": 0.25
+    }
+  },
+  "failure_breakdown": {
+    "no_box": 14,
+    "wrong_shape": 22,
+    "numeric_but_wrong": 53,
+    "truncated": 9,
+    "other": 0,
+    "by_topic_wrong": {
+      "other": 64,
+      "calculus": 3,
+      "linalg": 3,
+      "series": 9,
+      "probability": 8,
+      "geometry": 10,
+      "complex": 1
+    },
+    "by_length_wrong": {
+      "short(<150)": 19,
+      "medium(150-500)": 47,
+      "long(500-1500)": 26,
+      "vlong(>=1500)": 6
+    },
+    "by_type_wrong": {
+      "free_multi": 43,
+      "mcq": 30,
+      "free_single": 25
+    }
+  },
+  "no_box_response_lengths": {
+    "n": 25,
+    "median": 28731,
+    "max": 42901
+  },
+  "top_confident_wrong": [
+    {
+      "id": 29,
+      "question_type": "free_multi",
+      "gold": [
+        "442.857142857143",
+        "332.142857142857"
+      ],
+      "boxed": [
+        "442.86, 332.14"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 38,
+      "question_type": "free_multi",
+      "gold": [
+        "1250",
+        "875"
+      ],
+      "boxed": [
+        "875"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 39,
+      "question_type": "free_single",
+      "gold": [
+        "2.2892"
+      ],
+      "boxed": [
+        "2.3"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 82,
+      "question_type": "mcq",
+      "gold": "G",
+      "boxed": [
+        "B"
+      ],
+      "topic": "linalg"
+    },
+    {
+      "id": 83,
+      "question_type": "free_multi",
+      "gold": [
+        "yes",
+        "yes",
+        "no"
+      ],
+      "boxed": [
+        "Yes, No, No"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 123,
+      "question_type": "mcq",
+      "gold": "B",
+      "boxed": [
+        "D"
+      ],
+      "topic": "series"
+    },
+    {
+      "id": 125,
+      "question_type": "free_single",
+      "gold": [
+        "12.3941512253475"
+      ],
+      "boxed": [
+        "13"
+      ],
+      "topic": "probability"
+    },
+    {
+      "id": 132,
+      "question_type": "free_multi",
+      "gold": [
+        "C",
+        "A"
+      ],
+      "boxed": [
+        "5.06, 20.97"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 139,
+      "question_type": "free_multi",
+      "gold": [
+        "(-x - sqrt(9 - (y-5*b)**2))/(--4)",
+        "(-x + sqrt(9 - (y-5*b)**2))/(--4)"
+      ],
+      "boxed": [
+        "-\\frac{3}{4}, \\frac{3}{4}"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 250,
+      "question_type": "free_multi",
+      "gold": [
+        "-16.9799",
+        "-3.85208",
+        "6.56392",
+        "B"
+      ],
+      "boxed": [
+        "-16.81, -4.03, 6.39, B"
+      ],
+      "topic": "other"
+    }
+  ]
+}

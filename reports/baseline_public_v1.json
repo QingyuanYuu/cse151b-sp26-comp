@@ -1,0 +1,242 @@
+{
+  "n_total": 1126,
+  "n_correct": 677,
+  "overall_acc": 0.6012433392539964,
+  "by_type": {
+    "free_single": {
+      "n": 337,
+      "correct": 207,
+      "acc": 0.6142433234421365
+    },
+    "mcq": {
+      "n": 375,
+      "correct": 275,
+      "acc": 0.7333333333333333
+    },
+    "free_multi": {
+      "n": 414,
+      "correct": 195,
+      "acc": 0.47101449275362317
+    }
+  },
+  "by_topic": {
+    "other": {
+      "n": 731,
+      "correct": 443,
+      "acc": 0.6060191518467852
+    },
+    "complex": {
+      "n": 6,
+      "correct": 4,
+      "acc": 0.6666666666666666
+    },
+    "geometry": {
+      "n": 123,
+      "correct": 60,
+      "acc": 0.4878048780487805
+    },
+    "probability": {
+      "n": 80,
+      "correct": 38,
+      "acc": 0.475
+    },
+    "calculus": {
+      "n": 81,
+      "correct": 67,
+      "acc": 0.8271604938271605
+    },
+    "series": {
+      "n": 68,
+      "correct": 41,
+      "acc": 0.6029411764705882
+    },
+    "ode": {
+      "n": 15,
+      "correct": 9,
+      "acc": 0.6
+    },
+    "linalg": {
+      "n": 22,
+      "correct": 15,
+      "acc": 0.6818181818181818
+    }
+  },
+  "by_length": {
+    "short(<150)": {
+      "n": 311,
+      "correct": 239,
+      "acc": 0.7684887459807074
+    },
+    "medium(150-500)": {
+      "n": 588,
+      "correct": 363,
+      "acc": 0.6173469387755102
+    },
+    "long(500-1500)": {
+      "n": 202,
+      "correct": 69,
+      "acc": 0.3415841584158416
+    },
+    "vlong(>=1500)": {
+      "n": 25,
+      "correct": 6,
+      "acc": 0.24
+    }
+  },
+  "failure_breakdown": {
+    "no_box": 4,
+    "wrong_shape": 70,
+    "numeric_but_wrong": 340,
+    "truncated": 35,
+    "other": 0,
+    "by_topic_wrong": {
+      "other": 288,
+      "probability": 42,
+      "calculus": 14,
+      "geometry": 63,
+      "series": 27,
+      "linalg": 7,
+      "ode": 6,
+      "complex": 2
+    },
+    "by_length_wrong": {
+      "short(<150)": 72,
+      "medium(150-500)": 225,
+      "long(500-1500)": 133,
+      "vlong(>=1500)": 19
+    },
+    "by_type_wrong": {
+      "mcq": 100,
+      "free_multi": 219,
+      "free_single": 130
+    }
+  },
+  "no_box_response_lengths": {
+    "n": 40,
+    "median": 40056,
+    "max": 63747
+  },
+  "top_confident_wrong": [
+    {
+      "id": 1,
+      "question_type": "mcq",
+      "gold": "F",
+      "boxed": [
+        "E"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 2,
+      "question_type": "free_multi",
+      "gold": [
+        "143.224229233795",
+        "2.32624773420025"
+      ],
+      "boxed": [
+        "2.32752"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 8,
+      "question_type": "free_single",
+      "gold": [
+        "(1/2)^[(1999-1963)/31]"
+      ],
+      "boxed": [
+        "0.447061"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 12,
+      "question_type": "free_multi",
+      "gold": [
+        "380",
+        "315",
+        "13",
+        "310"
+      ],
+      "boxed": [
+        "380, 315, 14, 310"
+      ],
+      "topic": "probability"
+    },
+    {
+      "id": 13,
+      "question_type": "mcq",
+      "gold": "J",
+      "boxed": [
+        "D"
+      ],
+      "topic": "calculus"
+    },
+    {
+      "id": 16,
+      "question_type": "free_multi",
+      "gold": [
+        "atan(4.76)",
+        "pi"
+      ],
+      "boxed": [
+        "3.142"
+      ],
+      "topic": "geometry"
+    },
+    {
+      "id": 21,
+      "question_type": "free_multi",
+      "gold": [
+        "3*t^1*(1-t)^2",
+        "6*t^2*(1-t)^2",
+        "10*t^3*(1-t)^2",
+        "7*t^6*(1-t)^1",
+        "70*t^4*(1-t)^4"
+      ],
+      "boxed": [
+        "70t^4(1-t)^4"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 22,
+      "question_type": "free_multi",
+      "gold": [
+        "1.6",
+        "1.76",
+        "0.16*p/16",
+        "up",
+        "1",
+        "0.16"
+      ],
+      "boxed": [
+        "1.600000, 1.760000, 0.16 \\lceil p/16 \\rceil, up, 16, 0.16"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 23,
+      "question_type": "free_multi",
+      "gold": [
+        "B",
+        "A",
+        "B",
+        "A"
+      ],
+      "boxed": [
+        "2,1,2,1"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 24,
+      "question_type": "mcq",
+      "gold": "A",
+      "boxed": [
+        "E"
+      ],
+      "topic": "calculus"
+    }
+  ]
+}

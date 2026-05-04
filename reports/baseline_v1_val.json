@@ -1,0 +1,236 @@
+{
+  "n_total": 225,
+  "n_correct": 141,
+  "overall_acc": 0.6266666666666667,
+  "by_type": {
+    "free_single": {
+      "n": 67,
+      "correct": 44,
+      "acc": 0.6567164179104478
+    },
+    "free_multi": {
+      "n": 83,
+      "correct": 42,
+      "acc": 0.5060240963855421
+    },
+    "mcq": {
+      "n": 75,
+      "correct": 55,
+      "acc": 0.7333333333333333
+    }
+  },
+  "by_topic": {
+    "other": {
+      "n": 157,
+      "correct": 102,
+      "acc": 0.6496815286624203
+    },
+    "calculus": {
+      "n": 10,
+      "correct": 8,
+      "acc": 0.8
+    },
+    "geometry": {
+      "n": 21,
+      "correct": 12,
+      "acc": 0.5714285714285714
+    },
+    "linalg": {
+      "n": 6,
+      "correct": 3,
+      "acc": 0.5
+    },
+    "series": {
+      "n": 13,
+      "correct": 7,
+      "acc": 0.5384615384615384
+    },
+    "probability": {
+      "n": 16,
+      "correct": 8,
+      "acc": 0.5
+    },
+    "ode": {
+      "n": 1,
+      "correct": 1,
+      "acc": 1.0
+    },
+    "complex": {
+      "n": 1,
+      "correct": 0,
+      "acc": 0.0
+    }
+  },
+  "by_length": {
+    "short(<150)": {
+      "n": 59,
+      "correct": 44,
+      "acc": 0.7457627118644068
+    },
+    "long(500-1500)": {
+      "n": 39,
+      "correct": 17,
+      "acc": 0.4358974358974359
+    },
+    "medium(150-500)": {
+      "n": 119,
+      "correct": 78,
+      "acc": 0.6554621848739496
+    },
+    "vlong(>=1500)": {
+      "n": 8,
+      "correct": 2,
+      "acc": 0.25
+    }
+  },
+  "failure_breakdown": {
+    "no_box": 0,
+    "wrong_shape": 9,
+    "numeric_but_wrong": 70,
+    "truncated": 5,
+    "other": 0,
+    "by_topic_wrong": {
+      "other": 55,
+      "calculus": 2,
+      "geometry": 9,
+      "series": 6,
+      "probability": 8,
+      "linalg": 3,
+      "complex": 1
+    },
+    "by_length_wrong": {
+      "short(<150)": 15,
+      "medium(150-500)": 41,
+      "long(500-1500)": 22,
+      "vlong(>=1500)": 6
+    },
+    "by_type_wrong": {
+      "free_multi": 41,
+      "mcq": 20,
+      "free_single": 23
+    }
+  },
+  "no_box_response_lengths": {
+    "n": 6,
+    "median": 43743,
+    "max": 63747
+  },
+  "top_confident_wrong": [
+    {
+      "id": 13,
+      "question_type": "mcq",
+      "gold": "J",
+      "boxed": [
+        "D"
+      ],
+      "topic": "calculus"
+    },
+    {
+      "id": 22,
+      "question_type": "free_multi",
+      "gold": [
+        "1.6",
+        "1.76",
+        "0.16*p/16",
+        "up",
+        "1",
+        "0.16"
+      ],
+      "boxed": [
+        "1.600000, 1.760000, 0.16 \\lceil p/16 \\rceil, up, 16, 0.16"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 29,
+      "question_type": "free_multi",
+      "gold": [
+        "442.857142857143",
+        "332.142857142857"
+      ],
+      "boxed": [
+        "332.143"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 39,
+      "question_type": "free_single",
+      "gold": [
+        "2.2892"
+      ],
+      "boxed": [
+        "2.3"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 70,
+      "question_type": "free_single",
+      "gold": [
+        "4.64257581030492"
+      ],
+      "boxed": [
+        "4.64258"
+      ],
+      "topic": "geometry"
+    },
+    {
+      "id": 83,
+      "question_type": "free_multi",
+      "gold": [
+        "yes",
+        "yes",
+        "no"
+      ],
+      "boxed": [
+        "0"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 93,
+      "question_type": "free_multi",
+      "gold": [
+        "20/[5+3*cos(t)]",
+        "90/[4-sin(t)]"
+      ],
+      "boxed": [
+        "90/(4 - \\sin \\theta)"
+      ],
+      "topic": "other"
+    },
+    {
+      "id": 123,
+      "question_type": "mcq",
+      "gold": "B",
+      "boxed": [
+        "D"
+      ],
+      "topic": "series"
+    },
+    {
+      "id": 125,
+      "question_type": "free_single",
+      "gold": [
+        "12.3941512253475"
+      ],
+      "boxed": [
+        "13"
+      ],
+      "topic": "probability"
+    },
+    {
+      "id": 132,
+      "question_type": "free_multi",
+      "gold": [
+        "C",
+        "A"
+      ],
+      "boxed": [
+        "7.34000"
+      ],
+      "topic": "other"
+    }
+  ]
+}
