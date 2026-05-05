@@ -8,10 +8,13 @@ repos:
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
+        args: ['--maxkb=2048']
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.9
     hooks:
       - id: ruff
         args: [--fix]
+        exclude: '^starter_code_cse151b_comp\.ipynb$'
       - id: ruff-format
+        exclude: '^starter_code_cse151b_comp\.ipynb$'
