@@ -61,7 +61,6 @@ from cse151b_comp.voting import (
     vote_mcq,
 )
 
-
 # ─── Prompt selection ──────────────────────────────────────────────────────
 
 _STARTER_SYSTEM_PROMPT_MATH = (
@@ -93,6 +92,7 @@ def _select_prompt_builder(name: str):
         return _build_starter_prompt
     if name == "current":
         from cse151b_comp.prompts import build_prompt
+
         return build_prompt
     raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current")
 
@@ -156,15 +156,33 @@ def main() -> None:
     p.add_argument("--top-p", type=float, default=0.95)
     p.add_argument("--top-k", type=int, default=20)
     p.add_argument("--max-tokens", type=int, default=12288, dest="max_tokens")
-    p.add_argument("--prompt", default="phase0", choices=["phase0", "current"],
-                   help="Which prompt set to use. phase0 = starter, current = src/cse151b_comp/prompts.py")
+    p.add_argument(
+        "--prompt",
+        default="phase0",
+        choices=["phase0", "current"],
+        help="Which prompt set to use. phase0 = starter, current = src/cse151b_comp/prompts.py",
+    )
     p.add_argument("--limit", type=int, default=None, help="Only run on first N rows (debug).")
     p.add_argument("--val", default=None, help="Optional val_indices.json to filter --input.")
     p.add_argument("--gpu-mem-util", type=float, default=0.70)
     p.add_argument("--max-model-len", type=int, default=20480)
-    p.add_argument("--max-num-seqs", type=int, default=16,
-                   help="vLLM max concurrent sequences. Lower for K=8 to keep KV cache feasible.")
+    p.add_argument(
+        "--max-num-seqs",
+        type=int,
+        default=16,
+        help="vLLM max concurrent sequences. Lower for K=8 to keep KV cache feasible.",
+    )
     p.add_argument("--seed", type=int, default=42, help="Base seed; per-sample seed varies internally.")
+    p.add_argument(
+        "--chunk-size",
+        type=int,
+        default=0,
+        help="If > 0, process prompts in chunks of this size, writing output JSONL "
+        "incrementally after each chunk. Survives mid-run kills. 0 = single batch.",
+    )
+    p.add_argument(
+        "--resume", action="store_true", help="If set and --output already exists, skip ids already present and append."
+    )
     args = p.parse_args()
 
     _setup_env()
@@ -177,7 +195,25 @@ def main() -> None:
         rows = [r for r in rows if r["id"] in val_ids]
     if args.limit:
         rows = rows[: args.limit]
+
+    # Resume: skip rows whose id is already in the output JSONL.
+    out_path = pathlib.Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    completed_ids: set = set()
+    if args.resume and out_path.exists():
+        for line in open(out_path):
+            try:
+                completed_ids.add(json.loads(line)["id"])
+            except (json.JSONDecodeError, KeyError):
+                continue
+        if completed_ids:
+            before = len(rows)
+            rows = [r for r in rows if r["id"] not in completed_ids]
+            print(f"[sc] Resume: {len(completed_ids)} already done, {len(rows)} remaining (was {before}).")
+
     print(f"[sc] Loaded {len(rows)} rows. K={args.k}, T={args.temperature}, top_p={args.top_p}.")
+    if args.chunk_size > 0:
+        print(f"[sc] Incremental mode: chunk_size={args.chunk_size} (output written per chunk).")
 
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Thinking-2507")
     tokenizer.pad_token = tokenizer.eos_token
@@ -186,7 +222,7 @@ def main() -> None:
         model="Qwen/Qwen3-4B-Thinking-2507",
         quantization="bitsandbytes",
         load_format="bitsandbytes",
-        enable_prefix_caching=True,        # K samples share prompt prefix
+        enable_prefix_caching=True,  # K samples share prompt prefix
         gpu_memory_utilization=args.gpu_mem_util,
         max_model_len=args.max_model_len,
         trust_remote_code=True,
@@ -210,88 +246,115 @@ def main() -> None:
     prompts = []
     for item in rows:
         system, user = build_prompt(item["question"], item.get("options"))
-        prompts.append(tokenizer.apply_chat_template(
-            [{"role": "system", "content": system},
-             {"role": "user", "content": user}],
-            tokenize=False, add_generation_prompt=True,
-        ))
-
-    print(f"[sc] Generating {len(prompts)} × n={args.k} = {len(prompts)*args.k} samples...")
-    t0 = time.time()
-    outputs = llm.generate(prompts, sampling_params=sampling_params)
-    print(f"[sc] Generation done in {(time.time() - t0) / 60:.1f} min")
-
-    # Process results.
-    out_rows = []
-    n_solvable_but_missed = 0
-    n_correct = 0
-    n_with_gold = 0
-    type_counts = {"mc": 0, "free_single": 0, "free_multi": 0}
-
-    for item, out in zip(rows, outputs):
-        qtype = question_type(item)
-        type_counts[qtype] += 1
-        responses = [c.text.strip() for c in out.outputs]
-
-        if qtype == "mc":
-            winning, vote_counts, win_idx = vote_mcq(responses)
-            extracted = [extract_letter(r) for r in responses]
-        elif qtype == "free_single":
-            winning, vote_counts, win_idx = vote_free_single(responses)
-            extracted = []
-            for r in responses:
-                boxes = extract_all_final_boxed(r)
-                extracted.append(normalize_answer(boxes[-1]) if boxes else "")
-        else:  # free_multi
-            winning, vote_counts, win_idx = vote_free_multi(responses)
-            extracted = [_extract_tuple(r) or () for r in responses]
-
-        winning_response = responses[win_idx] if responses else ""
-
-        record: dict = {
-            "id": item["id"],
-            "question_type": qtype,
-            "all_responses": responses,
-            "all_extracted": [
-                list(e) if isinstance(e, tuple) else e for e in extracted
-            ],
-            "vote_counts": vote_counts,
-            "winning_answer": list(winning) if isinstance(winning, tuple) else winning,
-            "winning_response": winning_response,
-            "K": args.k,
-        }
-
-        # Optional: gold-based correctness + solvable_but_missed.
-        gold = item.get("answer")
-        if gold is not None:
-            gold_norm = _normalize_gold(qtype, gold)
-            record["answer"] = gold
-            record["correct"] = (winning == gold_norm)
-            record["solvable_but_missed"] = solvable_but_missed(
-                extracted, winning, gold_norm
+        prompts.append(
+            tokenizer.apply_chat_template(
+                [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                tokenize=False,
+                add_generation_prompt=True,
             )
+        )
+
+    if not rows:
+        print("[sc] Nothing to do (all ids in --output already).")
+        return
+
+    # Chunk size 0 = "single batch" semantics, identical to old behaviour.
+    chunk = args.chunk_size if args.chunk_size > 0 else len(rows)
+    file_mode = "a" if (args.resume and completed_ids) else "w"
+
+    print(
+        f"[sc] Generating {len(prompts)} × n={args.k} = {len(prompts)*args.k} samples"
+        f" in {(len(prompts) + chunk - 1) // chunk} chunk(s)..."
+    )
+    t_total_start = time.time()
+    n_written = 0
+
+    with open(out_path, file_mode) as out_f:
+        for chunk_start in range(0, len(rows), chunk):
+            chunk_rows = rows[chunk_start : chunk_start + chunk]
+            chunk_prompts = prompts[chunk_start : chunk_start + chunk]
+            chunk_idx = chunk_start // chunk + 1
+            n_chunks = (len(rows) + chunk - 1) // chunk
+            print(f"[sc] Chunk {chunk_idx}/{n_chunks}: " f"generating {len(chunk_rows)} prompts × n={args.k}...")
+            t0 = time.time()
+            outputs = llm.generate(chunk_prompts, sampling_params=sampling_params)
+            elapsed = (time.time() - t0) / 60
+            print(f"[sc] Chunk {chunk_idx} generation done in {elapsed:.1f} min.")
+
+            for item, out in zip(chunk_rows, outputs):
+                qtype = question_type(item)
+                responses = [c.text.strip() for c in out.outputs]
+
+                if qtype == "mc":
+                    winning, vote_counts, win_idx = vote_mcq(responses)
+                    extracted = [extract_letter(r) for r in responses]
+                elif qtype == "free_single":
+                    winning, vote_counts, win_idx = vote_free_single(responses)
+                    extracted = []
+                    for r in responses:
+                        boxes = extract_all_final_boxed(r)
+                        extracted.append(normalize_answer(boxes[-1]) if boxes else "")
+                else:  # free_multi
+                    winning, vote_counts, win_idx = vote_free_multi(responses)
+                    extracted = [_extract_tuple(r) or () for r in responses]
+
+                winning_response = responses[win_idx] if responses else ""
+
+                record: dict = {
+                    "id": item["id"],
+                    "question_type": qtype,
+                    "all_responses": responses,
+                    "all_extracted": [list(e) if isinstance(e, tuple) else e for e in extracted],
+                    "vote_counts": vote_counts,
+                    "winning_answer": list(winning) if isinstance(winning, tuple) else winning,
+                    "winning_response": winning_response,
+                    "K": args.k,
+                }
+
+                gold = item.get("answer")
+                if gold is not None:
+                    gold_norm = _normalize_gold(qtype, gold)
+                    record["answer"] = gold
+                    record["correct"] = winning == gold_norm
+                    record["solvable_but_missed"] = solvable_but_missed(extracted, winning, gold_norm)
+
+                out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                n_written += 1
+
+            out_f.flush()
+            os.fsync(out_f.fileno())  # durable per-chunk: survives kill/crash
+            print(
+                f"[sc] Chunk {chunk_idx}: wrote {len(chunk_rows)} rows "
+                f"(total now {n_written + len(completed_ids)} of "
+                f"{len(rows) + len(completed_ids)})."
+            )
+
+    print(f"\n[sc] Done in {(time.time() - t_total_start) / 60:.1f} min total.")
+    print(f"[sc] Wrote {n_written} new rows → {out_path}")
+
+    # Final summary: re-read the whole file so resume runs report cumulative stats.
+    type_counts = {"mc": 0, "free_single": 0, "free_multi": 0}
+    n_correct = 0
+    n_solvable_but_missed = 0
+    n_with_gold = 0
+    for line in open(out_path):
+        rec = json.loads(line)
+        type_counts[rec.get("question_type", "free_single")] += 1
+        if "correct" in rec:
             n_with_gold += 1
-            if record["correct"]:
+            if rec["correct"]:
                 n_correct += 1
-            if record["solvable_but_missed"]:
+            if rec.get("solvable_but_missed"):
                 n_solvable_but_missed += 1
 
-        out_rows.append(record)
-
-    out_path = pathlib.Path(args.output)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
-        for r in out_rows:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-
-    print()
-    print(f"[sc] Wrote {len(out_rows)} rows → {out_path}")
     print(f"[sc] Question-type counts: {type_counts}")
     if n_with_gold:
         print(f"[sc] Accuracy: {n_correct}/{n_with_gold} = {n_correct/n_with_gold*100:.2f}%")
-        print(f"[sc] Solvable-but-missed: {n_solvable_but_missed}/{n_with_gold} "
-              f"= {n_solvable_but_missed/n_with_gold*100:.2f}%  "
-              f"(upper bound on gain from better voting)")
+        print(
+            f"[sc] Solvable-but-missed: {n_solvable_but_missed}/{n_with_gold} "
+            f"= {n_solvable_but_missed/n_with_gold*100:.2f}%  "
+            f"(upper bound on gain from better voting)"
+        )
 
 
 if __name__ == "__main__":

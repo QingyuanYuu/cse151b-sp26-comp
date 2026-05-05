@@ -117,18 +117,43 @@
 - LoRA + SC val ≥ v6 + SC val + 3pp → Day 5 直接 ship adapter
 - 退步 → Day 4 排查（数据污染？mask loss 错？epoch 太多过拟合？）
 
-### Day 4 —— 超参扫描（条件做）
+### Day 4 —— LoRA 调参 → 平台后切 Full FT 兜底
 
-只有 Day 3 LoRA 涨了才扫；如果退步，Day 4 用来排错重训而不是堆超参。
+**早上看 Day 3 结果决策路线**：
 
-扫描矩阵（每个 ~3 小时，挑 2–3 个跑）：
+#### 路线 A — LoRA val 还在涨：继续扫 LoRA 超参
+
 - `r ∈ {16, 32, 64}` × `lr ∈ {1e-4, 2e-4}`
 - epoch ∈ {2, 3, 5}（早停看 eval loss）
-- target_modules：q/k/v/o vs full attn+mlp
+- target_modules：q/k/v/o → 加 gate/up/down 看是否还涨
+- 挑 2–3 个 config 跑（每个 ~1.5–2h），val 最高的当 `lora_final`
 
-每个 config 训完跑 LoRA + SC K=8 val。挑 val 最高的当 `lora_v_final`。
+#### 路线 B — LoRA r=64 也已经平台：升级到 Full Fine-Tuning
 
-**Gate**：选定 `checkpoints/lora_final/`，比 Day 3 涨 ≥ 1pp，否则用 Day 3 版当 final。
+LoRA 低秩约束本身是隐式正则；平台 = 这个约束太紧。Full FT 在 96 GB 上完全可行（4B BF16 + Adam fp32 + 激活总占 ~42 GB），bsz 仍能开 8。
+
+**Full FT 配置**（保守策略，强正则止血）：
+- 4B BF16 base（同 LoRA 训练，**不**走 INT4）
+- 优化器：AdamW 8-bit（省一半显存，精度差不大）
+- **lr 极低**：`5e-6 → 2e-5` 之间扫；比 LoRA 低 1–2 个数量级
+- bsz=8 (eff)，epoch=1，warmup ratio 0.1
+- **eval every 50 steps，early stop on val 退步**（小数据集 full FT 极易过拟合，早停硬要求）
+- weight decay 0.01，dropout 不加（base 没 dropout 层）
+- 输出：`checkpoints/full_ft_v1/`（8 GB BF16 完整权重）
+
+**Full FT gate**：val ≥ 当前 lora_best + 2pp，AND held-out（如果 Day 5 前还能凑 ≥ 100 题）≥ lora_best + 1pp。否则丢 full FT，回 lora_best。
+
+#### 路线 C — Day 3 LoRA 退步：先排错再决定
+
+Day 4 不堆超参，先排查：
+- 数据污染（val_225 真的排掉了？grep 看 sft_train.jsonl 的 id）
+- mask loss 错（system+user 段是否真的 mask 掉、只训 assistant 段）
+- epoch 太多过拟合（试 1 epoch + 早停）
+- target_response 里有没有 `<think>` 被截断
+
+排错完重训 LoRA，不要急着上 full FT。
+
+**Gate**：选定 `checkpoints/lora_final/` 或 `checkpoints/full_ft_v1/`（取 val 高的）。
 
 ### Day 5 —— 大 K 推理 / final adapter handoff
 

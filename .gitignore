@@ -98,6 +98,8 @@ results/
 
 # Local-only dataset splits (keep public.jsonl committed)
 data/dev_*.jsonl
+data/public_train.jsonl
+data/sft_train.jsonl
 
 # Kaggle test set — re-download per user via Kaggle CLI; don't redistribute
 data/private.jsonl

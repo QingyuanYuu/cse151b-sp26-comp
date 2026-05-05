@@ -59,6 +59,7 @@ cse151b-submit = "cse151b_comp.submission:main"
 cse151b-split = "cse151b_comp.eval_harness:make_split_main"
 cse151b-compare = "cse151b_comp.eval_harness:compare_main"
 cse151b-sc = "cse151b_comp.self_consistency:main"
+cse151b-prepare-sft = "cse151b_comp.prepare_sft_data:main"
 
 # ==============================================================================
 # UV — PYTORCH INDEX SOURCES
