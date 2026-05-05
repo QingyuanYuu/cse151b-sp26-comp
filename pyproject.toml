@@ -44,6 +44,11 @@ vllm = ["vllm>=0.20", "transformers>=4.56,<5"]
 # QLoRA training (Phase 4)
 train = ["peft>=0.12", "datasets>=2.20", "trl>=0.10", "wandb"]
 
+# NuminaMath SFT data prep (decontaminated against public+private). Designed
+# to run on a non-GPU-bound machine (e.g. 4090). No torch needed; sklearn for
+# TF-IDF dedup, datasets to fetch the HF dataset.
+numina = ["datasets>=2.20", "scikit-learn>=1.5"]
+
 # PyTorch — pick one based on your CUDA
 cu126 = ["torch>=2.6", "torchvision", "torchaudio"]
 cu128 = ["torch>=2.6", "torchvision", "torchaudio"]
@@ -60,6 +65,7 @@ cse151b-split = "cse151b_comp.eval_harness:make_split_main"
 cse151b-compare = "cse151b_comp.eval_harness:compare_main"
 cse151b-sc = "cse151b_comp.self_consistency:main"
 cse151b-prepare-sft = "cse151b_comp.prepare_sft_data:main"
+cse151b-prepare-numina = "cse151b_comp.prepare_numina_data:main"
 
 # ==============================================================================
 # UV — PYTORCH INDEX SOURCES
