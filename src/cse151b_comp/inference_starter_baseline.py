@@ -51,13 +51,16 @@ def _build_starter_prompt(question: str, options: list[str] | None) -> tuple[str
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--val", default="data/val_indices.json")
+    p.add_argument("--val", default=None,
+                   help="Optional: filter --data to this val_indices.json. Omit to use all rows.")
     p.add_argument("--data", default="data/public.jsonl")
     p.add_argument("--out", default="results/baseline_v0_val.jsonl")
     p.add_argument("--max-tokens", type=int, default=12288, dest="max_tokens",
                    help="Default 12288 to match the original starter run.")
     p.add_argument("--gpu-mem-util", type=float, default=0.70)
     p.add_argument("--max-model-len", type=int, default=16384)
+    p.add_argument("--no-judge", action="store_true",
+                   help="Skip judger scoring (use for private-set runs).")
     args = p.parse_args()
 
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
@@ -66,10 +69,14 @@ def main() -> None:
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
 
-    val_ids = set(json.loads(pathlib.Path(args.val).read_text())["val_ids"])
     rows = [json.loads(line) for line in open(args.data)]
-    val_rows = [r for r in rows if r["id"] in val_ids]
-    print(f"Loaded {len(val_rows)} val rows (subset of {args.data})")
+    if args.val:
+        val_ids = set(json.loads(pathlib.Path(args.val).read_text())["val_ids"])
+        val_rows = [r for r in rows if r["id"] in val_ids]
+        print(f"Loaded {len(val_rows)} val rows (subset of {args.data})")
+    else:
+        val_rows = rows
+        print(f"Loaded {len(val_rows)} rows from {args.data}")
 
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Thinking-2507")
     tokenizer.pad_token = tokenizer.eos_token
@@ -115,7 +122,8 @@ def main() -> None:
             "response": out.outputs[0].text.strip(),
         })
 
-    rows_out = evaluate_rows(rows_out)
+    if not args.no_judge and rows_out and rows_out[0].get("answer") is not None:
+        rows_out = evaluate_rows(rows_out)
 
     out_path = pathlib.Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)

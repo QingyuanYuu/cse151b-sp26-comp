@@ -117,8 +117,8 @@ question styles include multiple-choice and free-form questions;
 free-form questions may require one or more numerical or symbolic
 answers, often corresponding to \texttt{[ANS]} placeholders in the
 problem statement. The grader extracts the contents of the final
-boxed expression $\boxed{\cdot}$ and judges semantic equivalence with
-the gold answer using a SymPy-based normalizer. We aim to improve the
+\verb|\boxed{...}| substring and judges semantic equivalence with the
+gold answer using a SymPy-based normalizer. We aim to improve the
 model's answer-level accuracy because the starter system performs
 poorly, achieving a public Kaggle score of $0.575$. At this milestone
 our approach is prompt engineering rather than model retraining: we
@@ -141,17 +141,16 @@ The task is hard along five orthogonal axes.
 \textbf{(1)~Data heterogeneity.} Three answer formats coexist; multi-answer
 questions are graded all-or-nothing.
 \textbf{(2)~Compute.} A 4B-parameter thinking model emits long
-chain-of-thought traces (delimited by dedicated \texttt{<think>}
-tokens) that easily exceed $10^4$ tokens; with $24$~GB of VRAM, INT4
-quantization is mandatory to fit batched inference.
+\verb|<think>...</think>| traces that easily exceed $10^4$ tokens; with
+$24$~GB of VRAM, INT4 quantization is mandatory to fit batched
+inference.
 \textbf{(3)~Software stack.} The latest \texttt{transformers} (5.x)
 ships breaking changes that the latest released
 \textsc{vLLM}~($0.20.0$) has not yet adapted; a working version pinning
 must be discovered by hand.
 \textbf{(4)~Format strictness.} The grader silently rejects
-\texttt{\textbackslash boxed\{(C)\}} or
-\texttt{\textbackslash boxed\{C.\}} even when the underlying letter is
-correct.
+\verb|\boxed{(C)}| or \verb|\boxed{C.}| even when the underlying
+letter is correct.
 \textbf{(5)~Truncation.} Long chains of thought can hit
 \texttt{max\_tokens} before the model emits a final boxed answer,
 costing the entire question.
@@ -166,12 +165,12 @@ in this milestone are:
   \item A reproducible \textsc{vLLM}-based inference pipeline that runs
         the full $1{,}126$ public set in roughly $3$~hours on a single
         RTX~4090, with a previously undocumented network configuration
-        fix (forcing the inter-process socket to loopback) and a
-        verified version pinning (\texttt{transformers}~$4.57.6$,
+        fix (\verb|VLLM_HOST_IP=127.0.0.1|) and a verified version
+        pinning (\texttt{transformers}~$4.57.6$,
         \textsc{vLLM}~$0.20.0$, INT4 BitsAndBytes).
   \item A taxonomy of failure modes derived from a real submission,
-        separating \emph{format failures} (truncated, missing boxed
-        answer, multi-part shape mismatch) from genuine
+        separating \emph{format failures} (truncated, missing
+        \verb|\boxed{}|, multi-part shape mismatch) from genuine
         \emph{reasoning errors}, which we use as the design target for
         the prompt rewrite.
   \item A format-aware prompt rewrite, validated on a stratified $20\%$
@@ -195,8 +194,8 @@ in this milestone are:
 intermediate reasoning steps before a final answer improves performance
 on arithmetic, commonsense, and symbolic tasks.
 \textsc{Qwen3-Thinking}~\citep{qwen3technical} is post-trained to emit
-such traces inside dedicated thinking tokens and specifically tuned
-for math and code reasoning, which is what makes a
+such traces inside dedicated \verb|<think>...</think>| tokens and
+specifically tuned for math and code reasoning, which is what makes a
 $4$B-parameter model competitive on a benchmark like the one in this
 competition.
 
@@ -229,7 +228,7 @@ Let $x_i = (q_i, o_i)$ denote question $i$, where $q_i$ is the
 natural-language statement and $o_i$ is a (possibly empty) list of
 multiple-choice options. The model produces a response
 $r_i = M(\mathrm{prompt}(x_i))$, from which an extractor $E(r_i)$
-returns the contents of the final boxed expression. The grader
+returns the contents of the final \verb|\boxed{...}|. The grader
 $g(\hat{y}_i, y_i^*) \in \{0,1\}$ judges symbolic equivalence with the
 gold answer $y_i^*$ at $1\mathrm{e}{-8}$ relative tolerance. We do not
 train the model in this milestone; instead we optimize over the prompt
@@ -271,10 +270,9 @@ We compare two configurations of the same base model on the same data:
 \begin{itemize}
     \item \textbf{Phase~0 (starter prompt).} The unmodified starter
           prompts (``Solve step-by-step. Put final answer in
-          \texttt{\textbackslash boxed\{\}}.'' for free-form;
-          ``Output ONLY the letter inside
-          \texttt{\textbackslash boxed\{\}}.'' for multiple choice),
-          with \texttt{max\_tokens}~$=12{,}288$ and
+          \verb|\boxed{}|.'' for free-form; ``Output ONLY the letter
+          inside \verb|\boxed{}|.'' for multiple choice), with
+          \texttt{max\_tokens}~$=12{,}288$ and
           \texttt{temperature}~$=0.6$. This baseline scores $0.575$ on
           the public Kaggle leaderboard.
     \item \textbf{Phase~1 (our prompt).} A rewritten system prompt
@@ -324,9 +322,8 @@ public questions takes roughly $3$~hours wall-clock end-to-end.
 its inter-process socket to the host's primary network IP, which on
 this machine resolves to a $100.80.\mathit{x}.\mathit{x}$ subnet that
 the OS firewall blocks; this manifested as repeated socket timeouts
-that never recovered. Setting the environment variable
-\texttt{VLLM\_HOST\_IP=127.0.0.1} before importing \textsc{vLLM}
-forces loopback and resolves the issue.
+that never recovered. We set \verb|VLLM_HOST_IP=127.0.0.1| before
+importing \textsc{vLLM} to force loopback and resolve the issue.
 
 \subsection{Results}
 \label{sec:results}
@@ -337,8 +334,7 @@ accuracy from $56.44\%$ ($127/225$) to $62.67\%$ ($141/225$), a
 $+6.23$~percentage-point gain. \cref{fig:acc_by_type} breaks the gain
 down by question type: the largest improvement is on multiple choice
 ($+13.33$~pp), where format-related failures of the starter (e.g.,
-\texttt{\textbackslash boxed\{(C)\}} or
-\texttt{\textbackslash boxed\{C.\}}) caused silent rejections that
+\verb|\boxed{(C)}| or \verb|\boxed{C.}|) caused silent rejections that
 our explicit negative-example prompt eliminates.
 
 \begin{figure}[h]
@@ -408,11 +404,11 @@ than authoritative.
 The richest signal for what to do next comes from analyzing the $449$
 incorrect Phase~1 responses on the full $1{,}126$-question public set
 (\cref{fig:failure_modes}). $75.7\%$ are responses that emit a final
-boxed expression with mathematically wrong content—genuine reasoning
-errors that no prompt rewrite can address. Multi-part shape mismatches
-account for $15.6\%$ and are the second-largest target; truncation
-accounts for $7.8\%$, down from $\sim$$17\%$ once we raised
-\texttt{max\_tokens}; the missing-box rate is now $0.9\%$.
+\verb|\boxed{...}| but with mathematically wrong content—genuine
+reasoning errors that no prompt rewrite can address. Multi-part shape
+mismatches account for $15.6\%$ and are the second-largest target;
+truncation accounts for $7.8\%$, down from $\sim$$17\%$ once we raised
+\texttt{max\_tokens}, and missing-\verb|\boxed{}| is now $0.9\%$.
 
 \begin{figure}[h]
   \centering
@@ -431,8 +427,8 @@ accounts for $7.8\%$, down from $\sim$$17\%$ once we raised
 
 \paragraph{Achievements.}
 We have raised validation accuracy by $+6.23$~pp
-($56.44\% \to 62.67\%$), reduced the no-box failure rate by
-$13.8$~pp absolute ($17.4\% \to 3.6\%$), and cut single-pass
+($56.44\% \to 62.67\%$), reduced the no-\verb|\boxed{}| failure rate
+by $13.8$~pp absolute ($17.4\% \to 3.6\%$), and cut single-pass
 inference time on $1{,}126$ questions from an estimated $30$~h to
 $\sim$$3$~h. We additionally have a documented taxonomy of failure
 modes from a real submission, a modular codebase that the next phases
@@ -500,15 +496,19 @@ report.
 
 \section*{LLM Usage}
 We used Anthropic's Claude as a research-and-discussion assistant
-during this milestone in two specific ways:
+during this milestone in three specific ways:
 (i)~as a literature-search aid to locate canonical papers on
 chain-of-thought, self-consistency, QLoRA, and \textsc{vLLM}, all of
-which we read directly and cite from the primary sources; and
+which we read directly and cite from the primary sources;
 (ii)~as a brainstorming partner to enumerate candidate
 prompt-engineering interventions and the experimental design needed to
-validate each one. All code, prompts, experiments, figures, and prose
-in this report were written and verified by the listed authors, who
-take full responsibility for any factual or computational
+validate each one; and
+(iii)~as a writing assistant to help organize and edit portions of
+this report—structuring section flow, condensing verbose passages, and
+suggesting clearer phrasings—after which all prose was reviewed and
+revised by the authors before inclusion. All code, prompts,
+experiments, and figures were written and verified by the listed
+authors, who take full responsibility for any factual or computational
 inaccuracies. Claude was \emph{not} used to generate model responses
 on the competition dataset; the only model evaluated on competition
 data is \textsc{Qwen3-4B-Thinking-2507} as required by the rules.
