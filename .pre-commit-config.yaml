@@ -8,7 +8,13 @@ repos:
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
-        args: ['--maxkb=2048']
+        # 51200 KB = 50 MB. Sized to allow:
+        # - uv.lock (~1.7 MB)
+        # - submission CSVs that contain full SC thinking traces (~18 MB at K=8;
+        #   could go ~30 MB at K=16). Each row's `response` is a multi-thousand-
+        #   token thinking trace, which makes raw bytes significant.
+        # GitHub hard-limit is 100 MB per file — 50 MB stays well under that.
+        args: ['--maxkb=51200']
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.9
