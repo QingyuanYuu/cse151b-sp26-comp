@@ -94,7 +94,13 @@ def _select_prompt_builder(name: str):
         from cse151b_comp.prompts import build_prompt
 
         return build_prompt
-    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current")
+    # Run B/C/D/E variants live in prompts.py and are self-contained — each
+    # is a (question, options) -> (system, user) function with no extra state.
+    if name in ("runb", "runc", "rund", "rune"):
+        import cse151b_comp.prompts as _p
+
+        return getattr(_p, f"build_prompt_{name}")
+    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune")
 
 
 # ─── Question type ─────────────────────────────────────────────────────────
@@ -167,8 +173,11 @@ def main() -> None:
     p.add_argument(
         "--prompt",
         default="phase0",
-        choices=["phase0", "current"],
-        help="Which prompt set to use. phase0 = starter, current = src/cse151b_comp/prompts.py",
+        choices=["phase0", "current", "runb", "runc", "rund", "rune"],
+        help="Which prompt set to use. phase0 = starter (proven 0.575 leaderboard); "
+        "current = v6 per-type routing; runb/c/d/e are jason/dev's incremental "
+        "improvements (Run B = leaderboard 0.60). Run E is the aggressive "
+        "ceiling probe — validate on val first.",
     )
     p.add_argument("--limit", type=int, default=None, help="Only run on first N rows (debug).")
     p.add_argument("--val", default=None, help="Optional val_indices.json to filter --input.")

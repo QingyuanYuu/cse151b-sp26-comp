@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import re
 
-
 # ─── Per-type rule fragments ───────────────────────────────────────────────
 
 _MCQ_RULE = (
@@ -86,18 +85,13 @@ _FREE_MULTI_RULE = (
 
 SYSTEM_PROMPT_MCQ = (
     "You are an expert mathematician. Read the problem and choices, "
-    "then select the single best answer.\n\n"
-    + _MCQ_RULE
+    "then select the single best answer.\n\n" + _MCQ_RULE
 )
 
-SYSTEM_PROMPT_FREE_SINGLE = (
-    "You are an expert mathematician. Solve the problem step-by-step.\n\n"
-    + _FREE_SINGLE_RULE
-)
+SYSTEM_PROMPT_FREE_SINGLE = "You are an expert mathematician. Solve the problem step-by-step.\n\n" + _FREE_SINGLE_RULE
 
 SYSTEM_PROMPT_FREE_MULTI = (
-    "You are an expert mathematician. Solve each sub-question step-by-step.\n\n"
-    + _FREE_MULTI_RULE
+    "You are an expert mathematician. Solve each sub-question step-by-step.\n\n" + _FREE_MULTI_RULE
 )
 
 # ─── Backward-compat alias ─────────────────────────────────────────────────
@@ -136,6 +130,364 @@ def detect_question_type(question: str, options: list[str] | None) -> str:
     if len(distinct_markers) >= 2:
         return "free_multi"
     return "free_single"
+
+
+# ─── Run B: Phase 0 base + targeted anti-pattern rules ────────────────────
+#
+# Phase 0 starter is the only prompt that has shipped >= 0.575 on the private
+# leaderboard. Run B keeps Phase 0's two-prompt structure (MCQ + free-form)
+# and adds three rules that target failure modes verified on private:
+#
+# 1. ``\quad`` between boxes truncates judger contiguity (48 v6 cases).
+# 2. Multiple ``\boxed{}`` blocks invite formatting drift; force single box.
+# 3. Symbolic gold (e.g. ``-7\sqrt{149}/149``) gets rounded to decimal under
+#    the v2 anti-rounding rule. Reverse: keep symbolic forms symbolic.
+#
+# Length budget: each system prompt < 150 tokens to avoid the v6 reasoning
+# drift observed at 349-token Phase 1 prompts (median response +47 %).
+
+RUNB_SYSTEM_PROMPT_MCQ = (
+    "You are an expert mathematician. Read the problem and the answer "
+    "choices, then select the single best answer.\n\n"
+    "Output ONLY the letter inside \\boxed{}, e.g. \\boxed{C}. "
+    "Do NOT write \\boxed{(C)}, \\boxed{C.}, or \\boxed{C)}. "
+    "Do NOT include the option content or any \\text{} / \\textbf{} macros. "
+    "Output exactly one \\boxed{...} at the end of your response."
+)
+
+RUNB_SYSTEM_PROMPT_FREE = (
+    "You are an expert mathematician. Solve step-by-step. Put your final "
+    "answer in \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "If the exact answer is irrational (involves \\sqrt, \\pi, e^x, \\ln, "
+    "or unsimplified fractions \\frac{p}{q}), keep it symbolic — write "
+    "\\boxed{2\\pi}, \\boxed{\\frac{1}{2}}, "
+    "\\boxed{-\\frac{7\\sqrt{149}}{149}} — do not convert to decimal "
+    "unless the question asks for one."
+)
+
+
+def build_prompt_runb(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run B prompt builder: Phase 0 structure + targeted rules.
+
+    Two prompts (MCQ vs free-form), not three. Multi-part free-form gets
+    the same system prompt as single free-form because the Run B mandate
+    is single-box-comma-separated regardless of K — no per-K branching.
+    """
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNB_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    return RUNB_SYSTEM_PROMPT_FREE, question
+
+
+# ─── Run C: Run B + structural end-with-box rule + text/bool examples ─────
+#
+# Run B (leaderboard 0.600) left two failure modes on private:
+#
+# 1. 113/943 = 12 % no-``\\boxed{}`` rate, 75 % of which had response > 30k
+#    chars — i.e. Qwen ran out of token budget mid-thinking and never
+#    reached a final answer. Adding budget alone doesn't fully fix this
+#    because some traces are simply too verbose. We need a structural
+#    rule that cues the model to *always* emit a final ``\\boxed{}``.
+# 2. Run B's free-form prompt only gave mathematical examples, so
+#    free_single's boxed-rate dipped from v5's 81.8 % to 80.5 %. The
+#    likely cause is the model treating the symbolic-preference rule as
+#    "answer must be mathematical", suppressing valid text/bool answers.
+#
+# Run C addresses both:
+#
+# 1. **End-with-box rule** (both prompts). Phrased as an unconditional
+#    structural ending, *not* as a "if running out, output guess"
+#    fallback. v2 Phase 1 tried the latter and the model produced
+#    literal ``\\boxed{...}`` placeholder text. Run C frames the box as
+#    the natural end of the response, not as a panic button.
+# 2. **Text/bool examples** in the free-form prompt: ``\\boxed{Yes}``,
+#    ``\\boxed{Tuesday}``, ``\\boxed{True}``. This counter-balances the
+#    symbolic-preference rule for non-numeric answers.
+#
+# Length budget: Run B was 87 / 137 tokens (MCQ / free). Run C target
+# under 110 / 175 tokens. Both still well under the 349-token Phase 1
+# regression zone.
+
+RUNC_SYSTEM_PROMPT_MCQ = (
+    "You are an expert mathematician. Read the problem and the answer "
+    "choices, then select the single best answer.\n\n"
+    "Output ONLY the letter inside \\boxed{}, e.g. \\boxed{C}. "
+    "Do NOT write \\boxed{(C)}, \\boxed{C.}, or \\boxed{C)}. "
+    "Do NOT include the option content or any \\text{} / \\textbf{} macros.\n\n"
+    "Your response must end with exactly one \\boxed{X} containing your "
+    "chosen letter."
+)
+
+RUNC_SYSTEM_PROMPT_FREE = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "If the exact answer is irrational (involves \\sqrt, \\pi, e^x, \\ln, "
+    "or unsimplified fractions \\frac{p}{q}), keep it symbolic — write "
+    "\\boxed{2\\pi}, \\boxed{\\frac{1}{2}}, "
+    "\\boxed{-\\frac{7\\sqrt{149}}{149}} — do not convert to decimal "
+    "unless the question asks for one. For text or boolean answers, use "
+    "the natural form: \\boxed{Yes}, \\boxed{Tuesday}, \\boxed{True}."
+)
+
+
+def build_prompt_runc(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run C prompt builder: Run B + end-with-box + text/bool examples."""
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNC_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    return RUNC_SYSTEM_PROMPT_FREE, question
+
+
+# ─── Run D: Run C + few-shot worked examples ──────────────────────────────
+#
+# Run C (val 65.33 %, private predicted 0.605-0.625) hit the practical
+# ceiling of *rule-based* prompt engineering. The next gain has to come
+# from *demonstration*, not instruction. Few-shot CoT examples are a
+# documented +3-7 pp lift on math benchmarks (GSM8K, MATH) for models
+# of this size class, and we have not used a single example so far.
+#
+# Run D adds:
+#
+# - MCQ: 1 worked example showing letter-only output discipline.
+# - Free-form: 3 worked examples, one per critical failure mode:
+#   * symbolic answer  (counter the decimal-conversion regression of v2)
+#   * multi-part comma format  (counter the 17 free_multi no-box cases)
+#   * bool/text answer (counter free_single's residual no-box rate)
+#
+# Each example uses an explicit ``Q: ... A: ...`` frame so the model
+# cannot accidentally lift the boxed value as its final answer the way
+# Run C's id=5 ANOVA case copied ``\\boxed{2\\pi}, \\boxed{1/2},
+# \\boxed{-7\\sqrt{149}/149}`` from the inline rule examples. Echoing
+# the Q→A frame would require fabricating the question too — much less
+# likely.
+#
+# Length budget: MCQ ~130 tokens, free-form ~270 tokens. Both stay
+# under the 349-token Phase 1 regression zone but enter the upper end
+# of the empirical "sweet spot". Risk-mitigated by val gate at 63 %
+# (Run C achieved 65.33 %, allow ~2.3 pp noise).
+
+RUND_SYSTEM_PROMPT_MCQ = (
+    "You are an expert mathematician. Read the problem and the answer "
+    "choices, then select the single best answer.\n\n"
+    "Output ONLY the letter inside \\boxed{}, e.g. \\boxed{C}. "
+    "Do NOT write \\boxed{(C)}, \\boxed{C.}, or \\boxed{C)}. "
+    "Do NOT include the option content or any \\text{} / \\textbf{} macros. "
+    "Your response must end with exactly one \\boxed{X} containing your "
+    "chosen letter.\n\n"
+    "Example:\n"
+    "Q: Which integer is closest to 17/3? Options: A. 4  B. 5  C. 6  D. 7\n"
+    "A: 17/3 ≈ 5.667. The closest integer is 6. \\boxed{C}"
+)
+
+RUND_SYSTEM_PROMPT_FREE = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "If the exact answer is irrational (involves \\sqrt, \\pi, e^x, \\ln, "
+    "or unsimplified fractions), keep it symbolic — do not convert to "
+    "decimal unless the question asks for one. For text/boolean answers, "
+    "use natural form: Yes / Tuesday / True.\n\n"
+    "Examples (study the format):\n\n"
+    "Q: Compute the area of a circle with radius 3.\n"
+    "A: Area = \\pi r^2 = 9\\pi. \\boxed{9\\pi}\n\n"
+    "Q: For y = 4x - 7, find the slope and y-intercept.\n"
+    "A: This is slope-intercept form. slope = 4, intercept = -7. "
+    "\\boxed{4, -7}\n\n"
+    "Q: If today is Sunday, what day of the week will it be 9 days from now?\n"
+    "A: 9 = 7 + 2 days. Sunday + 2 days = Tuesday. \\boxed{Tuesday}"
+)
+
+
+def build_prompt_rund(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run D prompt builder: Run C + 1-3 few-shot worked examples."""
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUND_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    return RUND_SYSTEM_PROMPT_FREE, question
+
+
+# ─── Run E: aggressive — topic routing + 5-shot + MCQ elimination + concise ─
+#
+# Run E is the "ceiling probe" — pushes every untouched prompt-engineering
+# axis simultaneously. Risk is higher than Run D (more variables, more
+# total tokens), so it should always be validated on public val before
+# Kaggle submission. If val regresses ≥ 2 pp vs Run D, fall back to Run D.
+#
+# Four axes Run D did not touch:
+#
+# 1. **Topic routing** (PLAN.md Phase 3a). Detect statistics / calculus /
+#    linear-algebra / probability keywords and append a 1-line topic-
+#    specific tip. The base free-form prompt stays type-agnostic; the
+#    suffix only adds where the topic is detected.
+# 2. **5-shot worked examples** (vs Run D's 3-shot). Adds a regression
+#    R^2 example (statistics) and a calculus derivative example to
+#    cover the two highest-occurrence private topics.
+# 3. **MCQ elimination strategy** instruction: "first eliminate clearly
+#    wrong options, then commit". Targets the 11 % residual no-box rate
+#    on 10-option MCQ where the model exhausts its budget enumerating
+#    every option in detail.
+# 4. **Conciseness hint** in free-form: "Do not restate intermediate
+#    computations multiple times." Direct counter-measure against the
+#    truncation pattern (75 % of Run B no-box failures had response >
+#    30k chars from over-elaborate reasoning).
+#
+# Length budget: MCQ 150 tokens, free base 270 tokens, free + topic
+# suffix up to 320 tokens. Approaches Phase 1's 349-token regression
+# zone — accept the risk because the failure mode is recoverable
+# (fall back to Run D) and this is the only way to verify the prompt-
+# engineering ceiling without LoRA / SC investment.
+
+_RUNE_TOPIC_SUFFIX_STATS = (
+    "\n\nStatistics tip: keep SS, MS, F, R² in exact form during "
+    "derivation; round only the final answer if explicitly requested."
+)
+
+_RUNE_TOPIC_SUFFIX_CALCULUS = (
+    "\n\nCalculus tip: keep limits, derivatives, integrals in exact "
+    "symbolic form (e.g. \\sin(x)/x, \\frac{d}{dx}, \\int)."
+)
+
+_RUNE_TOPIC_SUFFIX_LINALG = (
+    "\n\nLinear algebra tip: present matrix / vector answers as ordered "
+    "tuples inside one \\boxed{}; do not unfold step-by-step row reductions."
+)
+
+_RUNE_TOPIC_SUFFIX_PROBABILITY = (
+    "\n\nProbability tip: keep fractions exact (e.g. \\boxed{1/4}) " "unless decimals are explicitly requested."
+)
+
+
+def _detect_topic_suffix(question: str) -> str:
+    """Detect math sub-domain from question keywords; return suffix or empty."""
+    q = question.lower()
+    stats_kw = (
+        "regression",
+        "anova",
+        "p-value",
+        "p value",
+        "t-test",
+        "f-statistic",
+        "f-test",
+        "chi-square",
+        "variance",
+        "standard deviation",
+        "confidence interval",
+        "ss_total",
+        "ss_residual",
+        "ss_treatment",
+        "null hypothesis",
+        "alternative hypothesis",
+        "mean square",
+    )
+    calc_kw = (
+        "derivative",
+        "differentiate",
+        "integral",
+        "integrate",
+        "limit",
+        "antiderivative",
+        "lim_{",
+        "\\int",
+        "\\frac{d}",
+    )
+    linalg_kw = (
+        "matrix",
+        "matrices",
+        "eigenvalue",
+        "eigenvector",
+        "determinant",
+        "row reduc",
+        "rank ",
+        "null space",
+        "column space",
+        "linear combination",
+    )
+    prob_kw = (
+        "probability",
+        "p(",
+        "expected value",
+        "bayes",
+        "bernoulli",
+        "binomial distribution",
+        "poisson",
+        "uniformly at random",
+    )
+    if any(kw in q for kw in stats_kw):
+        return _RUNE_TOPIC_SUFFIX_STATS
+    if any(kw in q for kw in calc_kw):
+        return _RUNE_TOPIC_SUFFIX_CALCULUS
+    if any(kw in q for kw in linalg_kw):
+        return _RUNE_TOPIC_SUFFIX_LINALG
+    if any(kw in q for kw in prob_kw):
+        return _RUNE_TOPIC_SUFFIX_PROBABILITY
+    return ""
+
+
+RUNE_SYSTEM_PROMPT_MCQ = (
+    "You are an expert mathematician. Read the problem and the answer "
+    "choices, then select the single best answer.\n\n"
+    "Output ONLY the letter inside \\boxed{}, e.g. \\boxed{C}. "
+    "Do NOT write \\boxed{(C)}, \\boxed{C.}, or \\boxed{C)}. "
+    "Do NOT include the option content or any \\text{} / \\textbf{} macros. "
+    "Your response must end with exactly one \\boxed{X} containing your "
+    "chosen letter.\n\n"
+    "Strategy for many options (8+): first eliminate clearly-wrong "
+    "choices in one or two lines, then commit. Do not derive every "
+    "option in detail — partial elimination is enough.\n\n"
+    "Example:\n"
+    "Q: Which integer is closest to 17/3? Options: A. 4  B. 5  C. 6  D. 7\n"
+    "A: 17/3 ≈ 5.667. Closest integer is 6. \\boxed{C}"
+)
+
+RUNE_SYSTEM_PROMPT_FREE_BASE = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "If the exact answer is irrational (involves \\sqrt, \\pi, e^x, \\ln, "
+    "or unsimplified fractions), keep it symbolic — do not convert to "
+    "decimal unless the question asks for one. For text/boolean answers, "
+    "use natural form: Yes / Tuesday / True.\n\n"
+    "Be concise: identify what is asked, derive efficiently, then box. "
+    "Do not restate intermediate computations multiple times.\n\n"
+    "Examples (study the format):\n\n"
+    "Q: Compute the area of a circle with radius 3.\n"
+    "A: A = \\pi r^2 = 9\\pi. \\boxed{9\\pi}\n\n"
+    "Q: For y = 4x - 7, find the slope and y-intercept.\n"
+    "A: Slope-intercept form. slope=4, intercept=-7. \\boxed{4, -7}\n\n"
+    "Q: If today is Sunday, what day will it be 9 days from now?\n"
+    "A: 9 = 7 + 2 days. Sunday + 2 = Tuesday. \\boxed{Tuesday}\n\n"
+    "Q: A regression yields SS_total=100, SS_residual=20. Compute R^2.\n"
+    "A: R^2 = 1 - SS_res/SS_tot = 1 - 20/100 = 0.8. \\boxed{0.8}\n\n"
+    "Q: Differentiate f(x) = x^3 + 2x.\n"
+    "A: f'(x) = 3x^2 + 2. \\boxed{3x^2 + 2}"
+)
+
+
+def build_prompt_rune(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run E prompt builder: Run D + topic routing + 2 extra examples + MCQ elimination."""
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNE_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    suffix = _detect_topic_suffix(question)
+    return RUNE_SYSTEM_PROMPT_FREE_BASE + suffix, question
 
 
 # ─── Build prompt ─────────────────────────────────────────────────────────
