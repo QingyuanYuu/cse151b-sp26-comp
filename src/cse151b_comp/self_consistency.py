@@ -101,12 +101,20 @@ def _select_prompt_builder(name: str):
 
 
 def question_type(item: dict) -> str:
-    if item.get("options"):
-        return "mc"
-    gold = item.get("answer", item.get("gold"))
-    if isinstance(gold, list) and len(gold) > 1:
-        return "free_multi"
-    return "free_single"
+    """Decide which voting strategy to use for this question.
+
+    **Must mirror prompts.detect_question_type** (which decides which system
+    prompt to use). If the two diverge, samples are generated under one
+    routing assumption and voted under another — the bug we hit on private
+    submissions where every free-form question got routed to ``free_single``
+    voting because gold was missing, even though the question text was
+    multi-part. The fix: route off the question text + options, never gold.
+    """
+    from cse151b_comp.prompts import detect_question_type
+
+    qtype = detect_question_type(item.get("question", ""), item.get("options"))
+    # detect_question_type returns "mc" / "free_single" / "free_multi" already.
+    return qtype
 
 
 # ─── Per-sample extraction (shared with voting helpers) ────────────────────
