@@ -96,11 +96,8 @@ dmypy.json
 # Generated outputs (large, regeneratable)
 results/
 
-# Local-only dataset splits (keep public.jsonl committed)
+# Local-only dataset splits (keep public.jsonl + private.jsonl committed)
 data/dev_*.jsonl
-
-# Kaggle test set — re-download per user via Kaggle CLI; don't redistribute
-data/private.jsonl
 
 # Model artifacts (use HuggingFace cache, don't commit weights)
 *.safetensors
