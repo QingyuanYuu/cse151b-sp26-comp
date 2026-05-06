@@ -16,6 +16,8 @@ from cse151b_comp.prompts import (
     RUNC_SYSTEM_PROMPT_MCQ,
     RUND_SYSTEM_PROMPT_FREE,
     RUND_SYSTEM_PROMPT_MCQ,
+    RUNE_SYSTEM_PROMPT_FREE_BASE,
+    RUNE_SYSTEM_PROMPT_MCQ,
     SYSTEM_PROMPT_FREE_MULTI,
     SYSTEM_PROMPT_FREE_SINGLE,
     SYSTEM_PROMPT_MATH,
@@ -24,6 +26,7 @@ from cse151b_comp.prompts import (
     build_prompt_runb,
     build_prompt_runc,
     build_prompt_rund,
+    build_prompt_rune,
     detect_question_type,
 )
 
@@ -526,3 +529,132 @@ def test_rund_prompts_under_token_budget() -> None:
     # so cap free at 1300 chars (~325 tokens) with margin.
     assert len(RUND_SYSTEM_PROMPT_MCQ) < 600
     assert len(RUND_SYSTEM_PROMPT_FREE) < 1300
+
+
+# ─── Run E prompt rules (ceiling probe) ────────────────────────────────────
+
+
+def test_rune_inherits_runb_anti_pattern_rules() -> None:
+    assert "\\quad" in RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "\\qquad" in RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "Do NOT use multiple \\boxed{} blocks" in RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "irrational" in RUNE_SYSTEM_PROMPT_FREE_BASE.lower()
+    assert "\\boxed{(C)}" in RUNE_SYSTEM_PROMPT_MCQ
+    assert "\\boxed{C.}" in RUNE_SYSTEM_PROMPT_MCQ
+
+
+def test_rune_keeps_end_with_box_rule() -> None:
+    assert "must end with" in RUNE_SYSTEM_PROMPT_MCQ.lower()
+    assert "End your response" in RUNE_SYSTEM_PROMPT_FREE_BASE
+
+
+def test_rune_mcq_has_elimination_strategy() -> None:
+    # Run E adds explicit MCQ elimination instruction (10-opt rescue).
+    assert "eliminate" in RUNE_SYSTEM_PROMPT_MCQ.lower()
+    assert "8+" in RUNE_SYSTEM_PROMPT_MCQ or "many options" in RUNE_SYSTEM_PROMPT_MCQ.lower()
+
+
+def test_rune_free_has_concise_hint() -> None:
+    # Run E adds anti-truncation conciseness instruction.
+    assert "concise" in RUNE_SYSTEM_PROMPT_FREE_BASE.lower()
+    assert "do not restate" in RUNE_SYSTEM_PROMPT_FREE_BASE.lower()
+
+
+def test_rune_free_has_five_examples() -> None:
+    # Run E expands Run D's 3 examples to 5 (adds R^2 + derivative).
+    qa_count = RUNE_SYSTEM_PROMPT_FREE_BASE.count("Q:")
+    assert qa_count == 5, f"Expected 5 Q→A examples, got {qa_count}"
+
+
+def test_rune_free_examples_target_failure_modes() -> None:
+    # Original 3 from Run D.
+    assert "\\boxed{9\\pi}" in RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "\\boxed{4, -7}" in RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "\\boxed{Tuesday}" in RUNE_SYSTEM_PROMPT_FREE_BASE
+    # Two new examples for Run E: statistics R^2, calculus derivative.
+    assert "R^2" in RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "\\boxed{0.8}" in RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "\\boxed{3x^2 + 2}" in RUNE_SYSTEM_PROMPT_FREE_BASE
+
+
+def test_rune_free_does_not_have_yes_no_example() -> None:
+    # Same audit as Run D: no directional bool worked example.
+    assert "\\boxed{Yes}" not in RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "\\boxed{No}" not in RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "\\boxed{True}" not in RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "\\boxed{False}" not in RUNE_SYSTEM_PROMPT_FREE_BASE
+
+
+def test_rune_does_not_have_anti_rounding_or_token_rescue() -> None:
+    for prompt in (RUNE_SYSTEM_PROMPT_MCQ, RUNE_SYSTEM_PROMPT_FREE_BASE):
+        assert "Do not round" not in prompt
+        assert "running out" not in prompt
+        assert "best-guess" not in prompt
+        assert "best guess" not in prompt
+
+
+def test_rune_topic_routing_stats() -> None:
+    # Stats keywords route to the stats suffix.
+    sys_p, _ = build_prompt_rune(
+        "An ANOVA test yields F = 4.5. State the conclusion.", None
+    )
+    assert "Statistics tip" in sys_p
+
+
+def test_rune_topic_routing_calculus() -> None:
+    sys_p, _ = build_prompt_rune("Compute the derivative of x^2.", None)
+    assert "Calculus tip" in sys_p
+
+
+def test_rune_topic_routing_linalg() -> None:
+    sys_p, _ = build_prompt_rune(
+        "Find the eigenvalues of the 2x2 matrix [[1,2],[3,4]].", None
+    )
+    assert "Linear algebra tip" in sys_p
+
+
+def test_rune_topic_routing_probability() -> None:
+    sys_p, _ = build_prompt_rune(
+        "What is the probability of rolling a 6?", None
+    )
+    assert "Probability tip" in sys_p
+
+
+def test_rune_topic_routing_default_no_suffix() -> None:
+    # No keyword match → no suffix.
+    sys_p, _ = build_prompt_rune("Compute 2 + 2.", None)
+    assert sys_p == RUNE_SYSTEM_PROMPT_FREE_BASE
+    assert "tip:" not in sys_p
+
+
+def test_rune_distinct_from_rund() -> None:
+    assert RUNE_SYSTEM_PROMPT_MCQ != RUND_SYSTEM_PROMPT_MCQ
+    assert RUNE_SYSTEM_PROMPT_FREE_BASE != RUND_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_rune_routes_mcq_by_options() -> None:
+    sys_p, _ = build_prompt_rune("Q?", ["a", "b"])
+    assert sys_p is RUNE_SYSTEM_PROMPT_MCQ
+
+
+def test_build_prompt_rune_routes_freeform_when_no_options() -> None:
+    sys_p, _ = build_prompt_rune("Compute 1+1.", None)
+    # Default topic suffix is empty, so equality with base.
+    assert sys_p == RUNE_SYSTEM_PROMPT_FREE_BASE
+
+
+def test_build_prompt_rune_mcq_user_includes_labels() -> None:
+    _, user = build_prompt_rune("What is 2+2?", ["3", "4", "5"])
+    assert "A. 3" in user
+    assert "B. 4" in user
+    assert "C. 5" in user
+
+
+def test_rune_prompts_under_token_budget() -> None:
+    # Run E intentionally pushes the upper end of the empirical sweet
+    # spot. MCQ ~150 tokens (600 chars). Free base ~270 tokens (1080
+    # chars). With a topic suffix, free can reach ~320 tokens (1280
+    # chars). Hard ceiling: stay below 1400 chars on free base
+    # (= ~350 tokens, just under Phase 1's 349-token regression line).
+    assert len(RUNE_SYSTEM_PROMPT_MCQ) < 800
+    assert len(RUNE_SYSTEM_PROMPT_FREE_BASE) < 1400

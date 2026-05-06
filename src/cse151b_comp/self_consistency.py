@@ -104,8 +104,11 @@ def _select_prompt_builder(name: str):
     if name == "rund":
         from cse151b_comp.prompts import build_prompt_rund
         return build_prompt_rund
+    if name == "rune":
+        from cse151b_comp.prompts import build_prompt_rune
+        return build_prompt_rune
     raise ValueError(
-        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund"
+        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune"
     )
 
 
@@ -174,12 +177,13 @@ def main() -> None:
     p.add_argument("--top-k", type=int, default=20)
     p.add_argument("--max-tokens", type=int, default=12288, dest="max_tokens")
     p.add_argument("--prompt", default="phase0",
-                   choices=["phase0", "current", "runb", "runc", "rund"],
+                   choices=["phase0", "current", "runb", "runc", "rund", "rune"],
                    help="Which prompt set to use. phase0 = starter (v5_sanity 0.583), "
                         "current = v6 per-type (0.448, retired), "
                         "runb = Phase 0 + anti-pattern + symbolic preference (0.600), "
                         "runc = Run B + end-with-box + text/bool examples, "
-                        "rund = Run C + 1-3 few-shot worked examples.")
+                        "rund = Run C + 1-3 few-shot worked examples, "
+                        "rune = Run D + topic routing + 5-shot + MCQ elimination (ceiling probe).")
     p.add_argument("--per-type-budget", action="store_true",
                    help="Use cse151b_comp.budget.allocate_max_tokens per question instead "
                         "of the flat --max-tokens value. Overrides --max-tokens.")

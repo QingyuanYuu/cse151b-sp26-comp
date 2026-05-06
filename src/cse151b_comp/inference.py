@@ -33,6 +33,7 @@ from cse151b_comp.prompts import (
     build_prompt_runb,
     build_prompt_runc,
     build_prompt_rund,
+    build_prompt_rune,
 )
 
 
@@ -95,8 +96,10 @@ def _select_prompt_builder(name: str):
         return build_prompt_runc
     if name == "rund":
         return build_prompt_rund
+    if name == "rune":
+        return build_prompt_rune
     raise ValueError(
-        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund"
+        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune"
     )
 
 
@@ -117,12 +120,13 @@ def main() -> None:
     p.add_argument("--no-judge", action="store_true",
                    help="Skip judger scoring (use for private-set runs).")
     p.add_argument("--prompt", default="current",
-                   choices=["phase0", "current", "runb", "runc", "rund"],
+                   choices=["phase0", "current", "runb", "runc", "rund", "rune"],
                    help="Which prompt set to use. phase0 = starter (v5_sanity 0.583), "
                         "current = v6 per-type (0.448, retired), "
                         "runb = Phase 0 + anti-pattern + symbolic preference (0.600), "
                         "runc = Run B + end-with-box + text/bool examples, "
-                        "rund = Run C + 1-3 few-shot worked examples.")
+                        "rund = Run C + 1-3 few-shot worked examples, "
+                        "rune = Run D + topic routing + 5-shot + MCQ elimination (ceiling probe).")
     p.add_argument("--per-type-budget", action="store_true",
                    help="Use cse151b_comp.budget.allocate_max_tokens per question instead "
                         "of the flat --max-tokens value. Overrides --max-tokens.")
