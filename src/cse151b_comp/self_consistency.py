@@ -96,7 +96,7 @@ def _select_prompt_builder(name: str):
         return build_prompt
     # Run B/C/D/E variants live in prompts.py and are self-contained — each
     # is a (question, options) -> (system, user) function with no extra state.
-    if name in ("runb", "runc", "rund", "rune"):
+    if name in ("runb", "runc", "rund", "rune", "runf"):
         import cse151b_comp.prompts as _p
 
         return getattr(_p, f"build_prompt_{name}")
@@ -173,7 +173,7 @@ def main() -> None:
     p.add_argument(
         "--prompt",
         default="phase0",
-        choices=["phase0", "current", "runb", "runc", "rund", "rune"],
+        choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf"],
         help="Which prompt set to use. phase0 = starter (proven 0.575 leaderboard); "
         "current = v6 per-type routing; runb/c/d/e are jason/dev's incremental "
         "improvements (Run B = leaderboard 0.60). Run E is the aggressive "

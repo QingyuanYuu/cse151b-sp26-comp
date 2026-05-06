@@ -490,6 +490,77 @@ def build_prompt_rune(question: str, options: list[str] | None) -> tuple[str, st
     return RUNE_SYSTEM_PROMPT_FREE_BASE + suffix, question
 
 
+# ─── Run F: surgical fixes from Run D val + Run E learnings ───────────────
+#
+# Run D val regressed -1.78 pp vs Run C (65.33 % → 63.56 %). Detailed
+# inspection of the 10 questions where Run C was right and Run D wrong
+# isolated four prompt-induced bugs:
+#
+# - id=30: inline "Yes / Tuesday / True" rule caused the model to
+#   substitute Yes/No for A/B in multi-part questions whose sub-answers
+#   are letters from MCQ-style sub-options.
+# - id=5: any decimal-looking worked example ("R^2 = 0.8" in Run E,
+#   weekday in Run D) cues premature rounding (model wrote 62.78 for
+#   gold 62.7777...).
+# - id=135: the 4, -7 multi-part example over-promotes comma format —
+#   model split a single answer "5\sqrt{11}" into "5, \sqrt{(}11)".
+# - id=192: irrational-symbolic rule was over-applied to 10^6 vs 1E+06.
+#
+# Run E ceiling probe (val 56.89 %, -8.44 pp vs Run D) confirmed:
+#
+# - Long prompt (320 t) + 5-shot + topic suffix made the model **ignore**
+#   the format rules: 40 % multi-box, 18.7 % \quad — worse than v6.
+# - The single Run E change that survived was MCQ elimination clause:
+#   MCQ accuracy 73.3 % was on par with Run D. Cherry-pick this.
+#
+# Run F design: keep Run D's working core, surgically remove the three
+# Run D footguns, add Run E's MCQ elimination clause, do NOT add
+# topic routing or 5-shot or "be concise". Target free <= 230 tokens.
+
+RUNF_SYSTEM_PROMPT_MCQ = (
+    "You are an expert mathematician. Read the problem and the answer "
+    "choices, then select the single best answer.\n\n"
+    "Output ONLY the letter inside \\boxed{}, e.g. \\boxed{C}. "
+    "Do NOT write \\boxed{(C)}, \\boxed{C.}, or \\boxed{C)}. "
+    "Do NOT include the option content or any \\text{} / \\textbf{} macros. "
+    "Your response must end with exactly one \\boxed{X} containing your "
+    "chosen letter.\n\n"
+    "For 8+ option questions: eliminate clearly-wrong choices first, then "
+    "commit. Do not derive every option in detail.\n\n"
+    "Example:\n"
+    "Q: Which integer is closest to 17/3? Options: A. 4  B. 5  C. 6  D. 7\n"
+    "A: 17/3 ≈ 5.667. Closest is 6. \\boxed{C}"
+)
+
+RUNF_SYSTEM_PROMPT_FREE = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "If the exact answer involves \\sqrt, \\pi, e^x, \\ln, or unsimplified "
+    "fractions, keep it symbolic — do not convert to decimal unless the "
+    "question asks for one.\n\n"
+    "Examples (study the format):\n\n"
+    "Q: Compute the area of a circle with radius 3.\n"
+    "A: A = \\pi r^2 = 9\\pi. \\boxed{9\\pi}\n\n"
+    "Q: For y = 4x - 7, find the slope and y-intercept.\n"
+    "A: Slope-intercept form. slope=4, intercept=-7. \\boxed{4, -7}\n\n"
+    "Q: Simplify \\sqrt{75}.\n"
+    "A: 75 = 25 \\times 3, so \\sqrt{75} = 5\\sqrt{3}. \\boxed{5\\sqrt{3}}"
+)
+
+
+def build_prompt_runf(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run F prompt builder: Run D core + bug fixes + MCQ elimination from E."""
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNF_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    return RUNF_SYSTEM_PROMPT_FREE, question
+
+
 # ─── Build prompt ─────────────────────────────────────────────────────────
 
 
