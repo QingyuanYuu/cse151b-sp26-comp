@@ -444,8 +444,21 @@ def test_rund_free_examples_target_failure_modes() -> None:
     assert "\\boxed{9\\pi}" in RUND_SYSTEM_PROMPT_FREE
     # Multi-part comma example: \\boxed{4, -7} (counter multi-box).
     assert "\\boxed{4, -7}" in RUND_SYSTEM_PROMPT_FREE
-    # Bool example: \\boxed{No} (counter symbolic-only bias).
-    assert "\\boxed{No}" in RUND_SYSTEM_PROMPT_FREE
+    # Text example: \\boxed{Tuesday} (counter symbolic-only bias for
+    # natural-form answers; weekday picked instead of bool to avoid
+    # any Yes/No directional bias on private gold distribution).
+    assert "\\boxed{Tuesday}" in RUND_SYSTEM_PROMPT_FREE
+
+
+def test_rund_free_does_not_have_yes_no_example() -> None:
+    # Avoid biasing the model toward Yes or No on bool questions —
+    # private gold's Yes/No distribution is unknown, so a worked
+    # example with a directional answer is asymmetric risk. The inline
+    # rule still lists Yes/True/Tuesday so bool answers remain valid.
+    assert "\\boxed{Yes}" not in RUND_SYSTEM_PROMPT_FREE
+    assert "\\boxed{No}" not in RUND_SYSTEM_PROMPT_FREE
+    assert "\\boxed{True}" not in RUND_SYSTEM_PROMPT_FREE
+    assert "\\boxed{False}" not in RUND_SYSTEM_PROMPT_FREE
 
 
 def test_rund_uses_qa_format_to_resist_echo() -> None:

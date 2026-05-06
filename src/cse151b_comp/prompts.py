@@ -312,9 +312,8 @@ RUND_SYSTEM_PROMPT_FREE = (
     "Q: For y = 4x - 7, find the slope and y-intercept.\n"
     "A: This is slope-intercept form. slope = 4, intercept = -7. "
     "\\boxed{4, -7}\n\n"
-    "Q: Is the integer 21 prime?\n"
-    "A: 21 = 3 \\times 7, so it has divisors other than 1 and itself. "
-    "\\boxed{No}"
+    "Q: If today is Sunday, what day of the week will it be 9 days from now?\n"
+    "A: 9 = 7 + 2 days. Sunday + 2 days = Tuesday. \\boxed{Tuesday}"
 )
 
 
