@@ -138,6 +138,58 @@ def detect_question_type(question: str, options: list[str] | None) -> str:
     return "free_single"
 
 
+# ─── Run B: Phase 0 base + targeted anti-pattern rules ────────────────────
+#
+# Phase 0 starter is the only prompt that has shipped >= 0.575 on the private
+# leaderboard. Run B keeps Phase 0's two-prompt structure (MCQ + free-form)
+# and adds three rules that target failure modes verified on private:
+#
+# 1. ``\quad`` between boxes truncates judger contiguity (48 v6 cases).
+# 2. Multiple ``\boxed{}`` blocks invite formatting drift; force single box.
+# 3. Symbolic gold (e.g. ``-7\sqrt{149}/149``) gets rounded to decimal under
+#    the v2 anti-rounding rule. Reverse: keep symbolic forms symbolic.
+#
+# Length budget: each system prompt < 150 tokens to avoid the v6 reasoning
+# drift observed at 349-token Phase 1 prompts (median response +47 %).
+
+RUNB_SYSTEM_PROMPT_MCQ = (
+    "You are an expert mathematician. Read the problem and the answer "
+    "choices, then select the single best answer.\n\n"
+    "Output ONLY the letter inside \\boxed{}, e.g. \\boxed{C}. "
+    "Do NOT write \\boxed{(C)}, \\boxed{C.}, or \\boxed{C)}. "
+    "Do NOT include the option content or any \\text{} / \\textbf{} macros. "
+    "Output exactly one \\boxed{...} at the end of your response."
+)
+
+RUNB_SYSTEM_PROMPT_FREE = (
+    "You are an expert mathematician. Solve the problem step-by-step. "
+    "Put your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: output ONE single \\boxed{} containing all "
+    "values comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "separate \\boxed{} blocks. Do NOT insert \\quad, \\qquad, line breaks, "
+    "or section headers near the final boxed answer.\n\n"
+    "If the exact answer is symbolic (involves \\sqrt, \\pi, fractions, "
+    "e, log), keep it in symbolic form — write \\boxed{2\\pi}, "
+    "\\boxed{\\frac{1}{2}}, \\boxed{-\\frac{7\\sqrt{149}}{149}} — do not "
+    "convert to a decimal. Use a decimal only when the question explicitly "
+    "asks for one."
+)
+
+
+def build_prompt_runb(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run B prompt builder: Phase 0 structure + targeted rules.
+
+    Two prompts (MCQ vs free-form), not three. Multi-part free-form gets
+    the same system prompt as single free-form because the Run B mandate
+    is single-box-comma-separated regardless of K — no per-K branching.
+    """
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNB_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    return RUNB_SYSTEM_PROMPT_FREE, question
+
+
 # ─── Build prompt ─────────────────────────────────────────────────────────
 
 

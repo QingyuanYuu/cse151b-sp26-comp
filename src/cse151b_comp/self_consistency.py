@@ -53,6 +53,7 @@ from cse151b_comp.extract import (
     extract_letter,
     normalize_answer,
 )
+from cse151b_comp.prompts import detect_question_type
 from cse151b_comp.voting import (
     _extract_tuple,
     solvable_but_missed,
@@ -94,19 +95,27 @@ def _select_prompt_builder(name: str):
     if name == "current":
         from cse151b_comp.prompts import build_prompt
         return build_prompt
-    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current")
+    if name == "runb":
+        from cse151b_comp.prompts import build_prompt_runb
+        return build_prompt_runb
+    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current, runb")
 
 
 # ─── Question type ─────────────────────────────────────────────────────────
 
 
 def question_type(item: dict) -> str:
-    if item.get("options"):
-        return "mc"
-    gold = item.get("answer", item.get("gold"))
-    if isinstance(gold, list) and len(gold) > 1:
-        return "free_multi"
-    return "free_single"
+    """Question-type label based on the question text alone.
+
+    Mirrors :func:`cse151b_comp.prompts.detect_question_type` so that the
+    voting strategy matches the system prompt routing. The earlier
+    gold-based heuristic silently collapsed every free-form question into
+    ``free_single`` on the private set (no gold present), causing the
+    free_multi voting branch to never fire — see
+    ``reports/public_private_gap_analysis.md`` and the v6_sc_k8 0.448
+    leaderboard regression.
+    """
+    return detect_question_type(item.get("question", ""), item.get("options"))
 
 
 # ─── Per-sample extraction (shared with voting helpers) ────────────────────
@@ -156,8 +165,13 @@ def main() -> None:
     p.add_argument("--top-p", type=float, default=0.95)
     p.add_argument("--top-k", type=int, default=20)
     p.add_argument("--max-tokens", type=int, default=12288, dest="max_tokens")
-    p.add_argument("--prompt", default="phase0", choices=["phase0", "current"],
-                   help="Which prompt set to use. phase0 = starter, current = src/cse151b_comp/prompts.py")
+    p.add_argument("--prompt", default="phase0", choices=["phase0", "current", "runb"],
+                   help="Which prompt set to use. phase0 = starter (v5_sanity), "
+                        "current = src/cse151b_comp/prompts.py (v6 per-type), "
+                        "runb = Phase 0 base + anti-pattern rules + symbolic preference.")
+    p.add_argument("--per-type-budget", action="store_true",
+                   help="Use cse151b_comp.budget.allocate_max_tokens per question instead "
+                        "of the flat --max-tokens value. Overrides --max-tokens.")
     p.add_argument("--limit", type=int, default=None, help="Only run on first N rows (debug).")
     p.add_argument("--val", default=None, help="Optional val_indices.json to filter --input.")
     p.add_argument("--gpu-mem-util", type=float, default=0.70)
@@ -194,20 +208,11 @@ def main() -> None:
         max_num_batched_tokens=args.max_model_len,
         seed=args.seed,
     )
-    sampling_params = SamplingParams(
-        n=args.k,
-        max_tokens=args.max_tokens,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        top_k=args.top_k,
-        min_p=0.0,
-        presence_penalty=0.0,
-        repetition_penalty=1.0,
-        seed=args.seed,
-    )
-
     build_prompt = _select_prompt_builder(args.prompt)
     prompts = []
+    per_prompt_max_tokens: list[int] = []
+    if args.per_type_budget:
+        from cse151b_comp.budget import allocate_max_tokens
     for item in rows:
         system, user = build_prompt(item["question"], item.get("options"))
         prompts.append(tokenizer.apply_chat_template(
@@ -215,6 +220,41 @@ def main() -> None:
              {"role": "user", "content": user}],
             tokenize=False, add_generation_prompt=True,
         ))
+        if args.per_type_budget:
+            per_prompt_max_tokens.append(
+                allocate_max_tokens(item["question"], item.get("options"))
+            )
+
+    if args.per_type_budget:
+        sampling_params = [
+            SamplingParams(
+                n=args.k,
+                max_tokens=mt,
+                temperature=args.temperature,
+                top_p=args.top_p,
+                top_k=args.top_k,
+                min_p=0.0,
+                presence_penalty=0.0,
+                repetition_penalty=1.0,
+                seed=args.seed,
+            )
+            for mt in per_prompt_max_tokens
+        ]
+        budget_lo = min(per_prompt_max_tokens)
+        budget_hi = max(per_prompt_max_tokens)
+        print(f"[sc] Per-type budget enabled: max_tokens range [{budget_lo}, {budget_hi}]")
+    else:
+        sampling_params = SamplingParams(
+            n=args.k,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+            min_p=0.0,
+            presence_penalty=0.0,
+            repetition_penalty=1.0,
+            seed=args.seed,
+        )
 
     print(f"[sc] Generating {len(prompts)} × n={args.k} = {len(prompts)*args.k} samples...")
     t0 = time.time()

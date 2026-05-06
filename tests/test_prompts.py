@@ -10,11 +10,14 @@ These guard against:
 from __future__ import annotations
 
 from cse151b_comp.prompts import (
+    RUNB_SYSTEM_PROMPT_FREE,
+    RUNB_SYSTEM_PROMPT_MCQ,
     SYSTEM_PROMPT_FREE_MULTI,
     SYSTEM_PROMPT_FREE_SINGLE,
     SYSTEM_PROMPT_MATH,
     SYSTEM_PROMPT_MCQ,
     build_prompt,
+    build_prompt_runb,
     detect_question_type,
 )
 
@@ -208,3 +211,83 @@ def test_three_prompts_all_distinct() -> None:
 def test_system_prompt_math_back_compat_alias() -> None:
     # Existing notebook + scripts import SYSTEM_PROMPT_MATH; alias must work.
     assert SYSTEM_PROMPT_MATH is SYSTEM_PROMPT_FREE_MULTI
+
+
+# ─── Run B prompt rules ────────────────────────────────────────────────────
+
+
+def test_runb_mcq_has_letter_only_rule() -> None:
+    assert "ONLY the letter" in RUNB_SYSTEM_PROMPT_MCQ
+
+
+def test_runb_mcq_forbids_paren_period_variants() -> None:
+    assert "\\boxed{(C)}" in RUNB_SYSTEM_PROMPT_MCQ
+    assert "\\boxed{C.}" in RUNB_SYSTEM_PROMPT_MCQ
+
+
+def test_runb_mcq_no_anti_rounding_or_token_rescue() -> None:
+    # These were Phase 1 rules diagnosed harmful on private.
+    assert "Do not round" not in RUNB_SYSTEM_PROMPT_MCQ
+    assert "running out" not in RUNB_SYSTEM_PROMPT_MCQ
+    assert "best-guess" not in RUNB_SYSTEM_PROMPT_MCQ
+
+
+def test_runb_free_uses_single_box_comma_format() -> None:
+    # The whole point of Run B's free-form prompt: single box, comma-sep.
+    assert "ONE single \\boxed{}" in RUNB_SYSTEM_PROMPT_FREE
+    assert "\\boxed{3, 7, 12}" in RUNB_SYSTEM_PROMPT_FREE
+
+
+def test_runb_free_forbids_quad_and_multibox() -> None:
+    # The judger contiguity bug: \\quad / multi-box truncates to last box.
+    assert "\\quad" in RUNB_SYSTEM_PROMPT_FREE
+    assert "\\qquad" in RUNB_SYSTEM_PROMPT_FREE
+    assert "Do NOT use multiple separate \\boxed{} blocks" in RUNB_SYSTEM_PROMPT_FREE
+
+
+def test_runb_free_has_symbolic_preference() -> None:
+    # Targets private gold distribution: -7\sqrt{149}/149 etc.
+    assert "symbolic" in RUNB_SYSTEM_PROMPT_FREE.lower()
+    assert "\\sqrt" in RUNB_SYSTEM_PROMPT_FREE
+    assert "do not\nconvert to a decimal" in RUNB_SYSTEM_PROMPT_FREE or \
+           "do not convert" in RUNB_SYSTEM_PROMPT_FREE.lower()
+
+
+def test_runb_free_no_anti_rounding_or_token_rescue() -> None:
+    assert "Do not round" not in RUNB_SYSTEM_PROMPT_FREE
+    assert "6 significant figures" not in RUNB_SYSTEM_PROMPT_FREE
+    assert "running out" not in RUNB_SYSTEM_PROMPT_FREE
+    assert "best-guess" not in RUNB_SYSTEM_PROMPT_FREE
+
+
+def test_runb_two_prompts_distinct() -> None:
+    assert RUNB_SYSTEM_PROMPT_MCQ != RUNB_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_runb_routes_mcq_by_options() -> None:
+    sys_p, _ = build_prompt_runb("Q?", ["a", "b"])
+    assert sys_p is RUNB_SYSTEM_PROMPT_MCQ
+
+
+def test_build_prompt_runb_routes_freeform_when_no_options() -> None:
+    sys_p, _ = build_prompt_runb("Compute 1+1.", None)
+    assert sys_p is RUNB_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_runb_freeform_used_for_multipart_too() -> None:
+    # Run B intentionally collapses single + multi into one prompt.
+    sys_p, _ = build_prompt_runb("(a) X (b) Y (c) Z", None)
+    assert sys_p is RUNB_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_runb_mcq_user_includes_labels() -> None:
+    _, user = build_prompt_runb("What is 2+2?", ["3", "4", "5"])
+    assert "A. 3" in user
+    assert "B. 4" in user
+    assert "C. 5" in user
+
+
+def test_runb_free_prompt_under_token_budget() -> None:
+    # Length sanity: stay well under v6's 349-token Phase 1 prompt.
+    # Rough char/token ratio is ~4. 700 chars ≈ 175 tokens.
+    assert len(RUNB_SYSTEM_PROMPT_FREE) < 700

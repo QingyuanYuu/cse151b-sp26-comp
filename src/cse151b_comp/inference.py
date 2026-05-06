@@ -28,7 +28,7 @@ import sys
 import time
 
 from cse151b_comp.evaluate import evaluate_rows
-from cse151b_comp.prompts import build_prompt
+from cse151b_comp.prompts import build_prompt, build_prompt_runb
 
 
 # ─── Locked vLLM defaults (matches notebook 13) ────────────────────────────
@@ -51,6 +51,44 @@ def _load_data(path: pathlib.Path, limit: int | None = None) -> list[dict]:
     return rows
 
 
+# ─── Starter (Phase 0) prompts kept here for --prompt phase0 single-shot ───
+# Verbatim copy of the v5_sanity prompts (leaderboard 0.583), so this CLI
+# can reproduce that submission without going through self_consistency.
+
+_STARTER_SYSTEM_PROMPT_MATH = (
+    "You are an expert mathematician. Solve the problem step-by-step. "
+    "Put your final answer inside \\boxed{}. "
+    "If the problem has multiple sub-answers, separate them by commas inside a "
+    "single \\boxed{}, e.g. \\boxed{3, 7}."
+)
+
+_STARTER_SYSTEM_PROMPT_MCQ = (
+    "You are an expert mathematician. "
+    "Read the problem and the answer choices below, then select the single best "
+    "answer. Output ONLY the letter of your chosen option inside \\boxed{}, "
+    "e.g. \\boxed{C}."
+)
+
+
+def _build_starter_prompt(question: str, options: list[str] | None) -> tuple[str, str]:
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return _STARTER_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    return _STARTER_SYSTEM_PROMPT_MATH, question
+
+
+def _select_prompt_builder(name: str):
+    """Return ``(question, options) -> (system, user)`` for a named variant."""
+    if name == "phase0":
+        return _build_starter_prompt
+    if name == "current":
+        return build_prompt
+    if name == "runb":
+        return build_prompt_runb
+    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current, runb")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="vLLM inference for CSE 151B competition.")
     p.add_argument("--data", required=True, help="Input JSONL with id+question(+options)(+answer).")
@@ -67,6 +105,13 @@ def main() -> None:
     p.add_argument("--max-num-seqs", type=int, default=DEFAULT_MAX_NUM_SEQS)
     p.add_argument("--no-judge", action="store_true",
                    help="Skip judger scoring (use for private-set runs).")
+    p.add_argument("--prompt", default="current", choices=["phase0", "current", "runb"],
+                   help="Which prompt set to use. phase0 = starter (v5_sanity), "
+                        "current = src/cse151b_comp/prompts.py (v6 per-type), "
+                        "runb = Phase 0 base + anti-pattern rules + symbolic preference.")
+    p.add_argument("--per-type-budget", action="store_true",
+                   help="Use cse151b_comp.budget.allocate_max_tokens per question instead "
+                        "of the flat --max-tokens value. Overrides --max-tokens.")
     args = p.parse_args()
 
     _setup_env(args.gpu_id)
@@ -93,19 +138,15 @@ def main() -> None:
         max_num_batched_tokens=args.max_model_len,
     )
 
-    sampling_params = SamplingParams(
-        max_tokens=args.max_tokens,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        top_k=args.top_k,
-        min_p=0.0,
-        presence_penalty=0.0,
-        repetition_penalty=1.0,
-    )
+    prompt_builder = _select_prompt_builder(args.prompt)
+
+    if args.per_type_budget:
+        from cse151b_comp.budget import allocate_max_tokens
 
     prompts = []
+    per_prompt_max_tokens: list[int] = []
     for item in data:
-        system, user = build_prompt(item["question"], item.get("options"))
+        system, user = prompt_builder(item["question"], item.get("options"))
         prompts.append(
             tokenizer.apply_chat_template(
                 [{"role": "system", "content": system},
@@ -114,8 +155,39 @@ def main() -> None:
                 add_generation_prompt=True,
             )
         )
+        if args.per_type_budget:
+            per_prompt_max_tokens.append(
+                allocate_max_tokens(item["question"], item.get("options"))
+            )
 
-    print(f"Generating responses for {len(prompts)} questions...")
+    if args.per_type_budget:
+        sampling_params = [
+            SamplingParams(
+                max_tokens=mt,
+                temperature=args.temperature,
+                top_p=args.top_p,
+                top_k=args.top_k,
+                min_p=0.0,
+                presence_penalty=0.0,
+                repetition_penalty=1.0,
+            )
+            for mt in per_prompt_max_tokens
+        ]
+        budget_lo = min(per_prompt_max_tokens)
+        budget_hi = max(per_prompt_max_tokens)
+        print(f"Per-type budget enabled: max_tokens range [{budget_lo}, {budget_hi}]")
+    else:
+        sampling_params = SamplingParams(
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+            min_p=0.0,
+            presence_penalty=0.0,
+            repetition_penalty=1.0,
+        )
+
+    print(f"Generating responses for {len(prompts)} questions (--prompt {args.prompt})...")
     t0 = time.time()
     outputs = llm.generate(prompts, sampling_params=sampling_params)
     dt = time.time() - t0
