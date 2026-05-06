@@ -1,19 +1,17 @@
-# Run D Summary (val mode)
+# Run D Summary (private mode)
 
-Source: `results/val_runD_singleshot.jsonl` (225 responses).
+Source: `results/private_runD_singleshot.jsonl` (943 responses).
 
 ## Sanity
 
-- has \boxed{}: 216/225 = 96.0%
+- has \boxed{}: 863/943 = 91.5%
 - \quad-truncation pattern (v6 dead pattern): 0 (target: 0)
 - \qquad-truncation pattern: 0
 
 ## Boxed-count distribution
 
-`[(1, 113), (2, 37), (3, 12), (5, 9), (0, 9), (4, 8), (6, 5), (8, 4), (7, 4), (19, 3)]`
+`[(1, 424), (2, 166), (0, 80), (3, 53), (4, 35), (7, 22), (5, 17), (8, 17), (11, 15), (6, 13)]`
 
-## Val accuracy
+## Action
 
-- 143/225 = 63.56%
-- Phase 0 val baseline: 56.44%
-- Gate to proceed: ≥ 55.4%
+Submit `results/submission_runD.csv` to Kaggle.
