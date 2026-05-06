@@ -14,6 +14,8 @@ from cse151b_comp.prompts import (
     RUNB_SYSTEM_PROMPT_MCQ,
     RUNC_SYSTEM_PROMPT_FREE,
     RUNC_SYSTEM_PROMPT_MCQ,
+    RUND_SYSTEM_PROMPT_FREE,
+    RUND_SYSTEM_PROMPT_MCQ,
     SYSTEM_PROMPT_FREE_MULTI,
     SYSTEM_PROMPT_FREE_SINGLE,
     SYSTEM_PROMPT_MATH,
@@ -21,6 +23,7 @@ from cse151b_comp.prompts import (
     build_prompt,
     build_prompt_runb,
     build_prompt_runc,
+    build_prompt_rund,
     detect_question_type,
 )
 
@@ -399,3 +402,114 @@ def test_runc_prompts_under_token_budget() -> None:
     # FREE: ~175 tokens / ~700 chars
     assert len(RUNC_SYSTEM_PROMPT_MCQ) < 500
     assert len(RUNC_SYSTEM_PROMPT_FREE) < 750
+
+
+# ─── Run D prompt rules ────────────────────────────────────────────────────
+
+
+def test_rund_inherits_runc_anti_pattern_rules() -> None:
+    # Run D must keep all of Run C's working anti-pattern rules.
+    assert "\\quad" in RUND_SYSTEM_PROMPT_FREE
+    assert "\\qquad" in RUND_SYSTEM_PROMPT_FREE
+    assert "Do NOT use multiple \\boxed{} blocks" in RUND_SYSTEM_PROMPT_FREE
+    assert "irrational" in RUND_SYSTEM_PROMPT_FREE.lower()
+    assert "\\sqrt" in RUND_SYSTEM_PROMPT_FREE
+    assert "\\boxed{(C)}" in RUND_SYSTEM_PROMPT_MCQ
+    assert "\\boxed{C.}" in RUND_SYSTEM_PROMPT_MCQ
+
+
+def test_rund_keeps_end_with_box_rule() -> None:
+    assert "must end with" in RUND_SYSTEM_PROMPT_MCQ.lower()
+    assert "End your response" in RUND_SYSTEM_PROMPT_FREE
+
+
+def test_rund_mcq_has_one_worked_example() -> None:
+    # MCQ adds one worked example demonstrating letter-only output.
+    assert "Example:" in RUND_SYSTEM_PROMPT_MCQ
+    assert "Q:" in RUND_SYSTEM_PROMPT_MCQ
+    assert "A:" in RUND_SYSTEM_PROMPT_MCQ
+    # The example resolves to \boxed{C} (matching the rule's letter).
+    assert "\\boxed{C}" in RUND_SYSTEM_PROMPT_MCQ
+
+
+def test_rund_free_has_three_worked_examples() -> None:
+    # Three Q/A demonstrations: symbolic, multi-part, bool.
+    # The "A:" pattern after "Q:" identifies each demonstration.
+    qa_count = RUND_SYSTEM_PROMPT_FREE.count("Q:")
+    assert qa_count == 3, f"Expected 3 Q→A examples, got {qa_count}"
+
+
+def test_rund_free_examples_target_failure_modes() -> None:
+    # Symbolic example: \\boxed{9\\pi} (counter decimal-conversion).
+    assert "\\boxed{9\\pi}" in RUND_SYSTEM_PROMPT_FREE
+    # Multi-part comma example: \\boxed{4, -7} (counter multi-box).
+    assert "\\boxed{4, -7}" in RUND_SYSTEM_PROMPT_FREE
+    # Bool example: \\boxed{No} (counter symbolic-only bias).
+    assert "\\boxed{No}" in RUND_SYSTEM_PROMPT_FREE
+
+
+def test_rund_uses_qa_format_to_resist_echo() -> None:
+    # The id=5 echo bug in Run C came from inline boxed values without
+    # surrounding question context. Q→A frame requires the model to also
+    # fabricate a question text to plagiarise, much less likely.
+    # Both prompts must wrap any boxed example in a Q/A pair.
+    for prompt in (RUND_SYSTEM_PROMPT_MCQ, RUND_SYSTEM_PROMPT_FREE):
+        # Every \\boxed{...} block in the prompt should follow either a
+        # rule explanation ("like \\boxed{...}", "e.g. \\boxed{...}") or
+        # appear after an "A:" line (worked example answer).
+        assert "Q:" in prompt
+        assert "A:" in prompt
+
+
+def test_rund_does_not_have_anti_rounding_or_token_rescue() -> None:
+    for prompt in (RUND_SYSTEM_PROMPT_MCQ, RUND_SYSTEM_PROMPT_FREE):
+        assert "Do not round" not in prompt
+        assert "running out" not in prompt
+        assert "best-guess" not in prompt
+        assert "best guess" not in prompt
+
+
+def test_rund_does_not_use_ambiguous_e_or_log() -> None:
+    assert ", e," not in RUND_SYSTEM_PROMPT_FREE
+    assert ", log," not in RUND_SYSTEM_PROMPT_FREE
+
+
+def test_rund_distinct_from_runc() -> None:
+    assert RUND_SYSTEM_PROMPT_MCQ != RUNC_SYSTEM_PROMPT_MCQ
+    assert RUND_SYSTEM_PROMPT_FREE != RUNC_SYSTEM_PROMPT_FREE
+
+
+def test_rund_two_prompts_distinct() -> None:
+    assert RUND_SYSTEM_PROMPT_MCQ != RUND_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_rund_routes_mcq_by_options() -> None:
+    sys_p, _ = build_prompt_rund("Q?", ["a", "b"])
+    assert sys_p is RUND_SYSTEM_PROMPT_MCQ
+
+
+def test_build_prompt_rund_routes_freeform_when_no_options() -> None:
+    sys_p, _ = build_prompt_rund("Compute 1+1.", None)
+    assert sys_p is RUND_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_rund_freeform_used_for_multipart_too() -> None:
+    sys_p, _ = build_prompt_rund("(a) X (b) Y (c) Z", None)
+    assert sys_p is RUND_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_rund_mcq_user_includes_labels() -> None:
+    _, user = build_prompt_rund("What is 2+2?", ["3", "4", "5"])
+    assert "A. 3" in user
+    assert "B. 4" in user
+    assert "C. 5" in user
+
+
+def test_rund_prompts_under_token_budget() -> None:
+    # Run D adds few-shot examples on top of Run C. Length budget:
+    # MCQ ~130 tokens / ~520 chars (Run C was 92t/370c).
+    # FREE ~270 tokens / ~1080 chars (Run C was 167t/668c).
+    # Hard ceiling: 349-token Phase 1 prompt regressed -8.1pp on private,
+    # so cap free at 1300 chars (~325 tokens) with margin.
+    assert len(RUND_SYSTEM_PROMPT_MCQ) < 600
+    assert len(RUND_SYSTEM_PROMPT_FREE) < 1300

@@ -254,6 +254,79 @@ def build_prompt_runc(question: str, options: list[str] | None) -> tuple[str, st
     return RUNC_SYSTEM_PROMPT_FREE, question
 
 
+# ─── Run D: Run C + few-shot worked examples ──────────────────────────────
+#
+# Run C (val 65.33 %, private predicted 0.605-0.625) hit the practical
+# ceiling of *rule-based* prompt engineering. The next gain has to come
+# from *demonstration*, not instruction. Few-shot CoT examples are a
+# documented +3-7 pp lift on math benchmarks (GSM8K, MATH) for models
+# of this size class, and we have not used a single example so far.
+#
+# Run D adds:
+#
+# - MCQ: 1 worked example showing letter-only output discipline.
+# - Free-form: 3 worked examples, one per critical failure mode:
+#   * symbolic answer  (counter the decimal-conversion regression of v2)
+#   * multi-part comma format  (counter the 17 free_multi no-box cases)
+#   * bool/text answer (counter free_single's residual no-box rate)
+#
+# Each example uses an explicit ``Q: ... A: ...`` frame so the model
+# cannot accidentally lift the boxed value as its final answer the way
+# Run C's id=5 ANOVA case copied ``\\boxed{2\\pi}, \\boxed{1/2},
+# \\boxed{-7\\sqrt{149}/149}`` from the inline rule examples. Echoing
+# the Q→A frame would require fabricating the question too — much less
+# likely.
+#
+# Length budget: MCQ ~130 tokens, free-form ~270 tokens. Both stay
+# under the 349-token Phase 1 regression zone but enter the upper end
+# of the empirical "sweet spot". Risk-mitigated by val gate at 63 %
+# (Run C achieved 65.33 %, allow ~2.3 pp noise).
+
+RUND_SYSTEM_PROMPT_MCQ = (
+    "You are an expert mathematician. Read the problem and the answer "
+    "choices, then select the single best answer.\n\n"
+    "Output ONLY the letter inside \\boxed{}, e.g. \\boxed{C}. "
+    "Do NOT write \\boxed{(C)}, \\boxed{C.}, or \\boxed{C)}. "
+    "Do NOT include the option content or any \\text{} / \\textbf{} macros. "
+    "Your response must end with exactly one \\boxed{X} containing your "
+    "chosen letter.\n\n"
+    "Example:\n"
+    "Q: Which integer is closest to 17/3? Options: A. 4  B. 5  C. 6  D. 7\n"
+    "A: 17/3 ≈ 5.667. The closest integer is 6. \\boxed{C}"
+)
+
+RUND_SYSTEM_PROMPT_FREE = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "If the exact answer is irrational (involves \\sqrt, \\pi, e^x, \\ln, "
+    "or unsimplified fractions), keep it symbolic — do not convert to "
+    "decimal unless the question asks for one. For text/boolean answers, "
+    "use natural form: Yes / Tuesday / True.\n\n"
+    "Examples (study the format):\n\n"
+    "Q: Compute the area of a circle with radius 3.\n"
+    "A: Area = \\pi r^2 = 9\\pi. \\boxed{9\\pi}\n\n"
+    "Q: For y = 4x - 7, find the slope and y-intercept.\n"
+    "A: This is slope-intercept form. slope = 4, intercept = -7. "
+    "\\boxed{4, -7}\n\n"
+    "Q: Is the integer 21 prime?\n"
+    "A: 21 = 3 \\times 7, so it has divisors other than 1 and itself. "
+    "\\boxed{No}"
+)
+
+
+def build_prompt_rund(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run D prompt builder: Run C + 1-3 few-shot worked examples."""
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUND_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    return RUND_SYSTEM_PROMPT_FREE, question
+
+
 # ─── Build prompt ─────────────────────────────────────────────────────────
 
 
