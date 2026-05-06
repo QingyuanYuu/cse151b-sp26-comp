@@ -191,6 +191,25 @@ def main() -> None:
     p.add_argument(
         "--resume", action="store_true", help="If set and --output already exists, skip ids already present and append."
     )
+    p.add_argument(
+        "--allocate-tokens",
+        action="store_true",
+        help="Use cse151b_comp.budget.allocate_max_tokens to assign per-question "
+        "max_tokens (raises budget for MCQ-with-many-options and multi-part free-form). "
+        "Floor 12288, ceiling 20480. When set, --max-tokens is ignored.",
+    )
+    p.add_argument(
+        "--max-tokens-floor",
+        type=int,
+        default=12288,
+        help="Floor for --allocate-tokens. Default matches the previous uniform max_tokens.",
+    )
+    p.add_argument(
+        "--max-tokens-ceiling",
+        type=int,
+        default=20480,
+        help="Ceiling for --allocate-tokens. Leaves ~4k headroom under max_model_len.",
+    )
     args = p.parse_args()
 
     _setup_env()
@@ -238,17 +257,43 @@ def main() -> None:
         max_num_batched_tokens=args.max_model_len,
         seed=args.seed,
     )
-    sampling_params = SamplingParams(
-        n=args.k,
-        max_tokens=args.max_tokens,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        top_k=args.top_k,
-        min_p=0.0,
-        presence_penalty=0.0,
-        repetition_penalty=1.0,
-        seed=args.seed,
-    )
+
+    def _build_sp(max_tokens: int) -> SamplingParams:
+        return SamplingParams(
+            n=args.k,
+            max_tokens=max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+            min_p=0.0,
+            presence_penalty=0.0,
+            repetition_penalty=1.0,
+            seed=args.seed,
+        )
+
+    sampling_params = _build_sp(args.max_tokens)
+
+    # If --allocate-tokens, build a per-prompt SamplingParams list using
+    # cse151b_comp.budget. vLLM's llm.generate(prompts, sampling_params=list)
+    # accepts a list whose length matches prompts, applying each per-prompt.
+    per_prompt_sp: list[SamplingParams] | None = None
+    if args.allocate_tokens:
+        from cse151b_comp.budget import allocate_max_tokens
+
+        per_prompt_sp = []
+        budget_hist: dict[int, int] = {}
+        for item in rows:
+            mt = allocate_max_tokens(
+                item.get("question", ""),
+                item.get("options"),
+                ceiling=args.max_tokens_ceiling,
+                floor=args.max_tokens_floor,
+            )
+            per_prompt_sp.append(_build_sp(mt))
+            budget_hist[mt] = budget_hist.get(mt, 0) + 1
+        # Show the budget distribution so we can spot-check calibration.
+        hist_str = ", ".join(f"{k}:{v}" for k, v in sorted(budget_hist.items()))
+        print(f"[sc] Per-question max_tokens histogram: {hist_str}")
 
     build_prompt = _select_prompt_builder(args.prompt)
     prompts = []
@@ -285,7 +330,11 @@ def main() -> None:
             n_chunks = (len(rows) + chunk - 1) // chunk
             print(f"[sc] Chunk {chunk_idx}/{n_chunks}: " f"generating {len(chunk_rows)} prompts × n={args.k}...")
             t0 = time.time()
-            outputs = llm.generate(chunk_prompts, sampling_params=sampling_params)
+            if per_prompt_sp is not None:
+                chunk_sp = per_prompt_sp[chunk_start : chunk_start + chunk]
+                outputs = llm.generate(chunk_prompts, sampling_params=chunk_sp)
+            else:
+                outputs = llm.generate(chunk_prompts, sampling_params=sampling_params)
             elapsed = (time.time() - t0) / 60
             print(f"[sc] Chunk {chunk_idx} generation done in {elapsed:.1f} min.")
 
