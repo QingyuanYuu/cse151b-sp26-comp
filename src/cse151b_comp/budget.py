@@ -26,7 +26,10 @@ The coefficients below were derived from
 ``reports/baseline_public_v1.json``'s truncation distribution. The bands
 are intentionally conservative — we only ever **add** budget relative to
 the 12k baseline, never reduce, so a miscalibration cannot degrade the
-no-truncation cases.
+no-truncation cases. ``_FLOOR = 12000`` matches Phase 0's effective
+``max_tokens=12288`` (the v5_sanity 0.583 baseline rounded down to a
+clean 12k), so no question type ever receives less budget than the
+proven baseline.
 
 Hard ceiling: 22000 tokens per sample. Combined with vLLM
 ``max_model_len=24576`` and ~2k of prompt+system overhead, this fits the
@@ -41,7 +44,9 @@ import re
 
 _PART_RX = re.compile(r"\([a-e]\)")
 
-_FLOOR = 10000
+# 12000 = Phase 0's effective max_tokens floor (12288 rounded). Never go
+# below this — see module docstring + reports/public_private_gap_analysis.md.
+_FLOOR = 12000
 _CEILING = 22000
 
 
@@ -61,7 +66,7 @@ def _count_parts(question: str) -> int:
 
 
 def allocate_max_tokens(question: str, options: list[str] | None) -> int:
-    """Return per-question ``max_tokens`` in ``[10000, 22000]``.
+    """Return per-question ``max_tokens`` in ``[12000, 22000]``.
 
     Routing:
 
@@ -70,17 +75,20 @@ def allocate_max_tokens(question: str, options: list[str] | None) -> int:
       in its reasoning trace. Capped at 16k (10-option case).
     - ``[ANS]`` count or ``(a)/(b)/(c)`` markers >= 2 → multi-part.
       Budget scales linearly with K, capped at 22k.
-    - else → free-form single. Flat 12k (Phase 0's effective ceiling
-      after raising from 12288 to 16384 only mattered for outliers).
+    - else → free-form single. Flat at the floor (12k) — matches
+      Phase 0's effective baseline.
+
+    All branches floor at ``_FLOOR = 12000`` so the worst-case budget
+    matches the Phase 0 ``max_tokens=12288`` baseline exactly.
     """
     if options:
-        # MCQ: 4 opt → 11.2k, 5 opt → 12k, 8 opt → 14.4k, 10 opt → 16k
+        # MCQ: 4 opt → 12k (floor), 5 opt → 12k (floor), 8 opt → 14.4k, 10 opt → 16k
         n_opts = len(options)
         return max(_FLOOR, min(8000 + n_opts * 800, 16000))
 
     n_parts = _count_parts(question)
     if n_parts >= 2:
-        # K=2 → 10.4k, K=3 → 12.6k, K=5 → 17k, K=8 → 22k (capped)
+        # K=2 → 12k (floor), K=3 → 12.6k, K=5 → 17k, K=8 → 22k (capped)
         return max(_FLOOR, min(6000 + n_parts * 2200, _CEILING))
 
-    return 12000  # free-form single
+    return _FLOOR  # free-form single — floored at 12k

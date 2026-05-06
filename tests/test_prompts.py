@@ -234,7 +234,7 @@ def test_runb_mcq_no_anti_rounding_or_token_rescue() -> None:
 
 def test_runb_free_uses_single_box_comma_format() -> None:
     # The whole point of Run B's free-form prompt: single box, comma-sep.
-    assert "ONE single \\boxed{}" in RUNB_SYSTEM_PROMPT_FREE
+    assert "ONE \\boxed{}" in RUNB_SYSTEM_PROMPT_FREE
     assert "\\boxed{3, 7, 12}" in RUNB_SYSTEM_PROMPT_FREE
 
 
@@ -242,15 +242,22 @@ def test_runb_free_forbids_quad_and_multibox() -> None:
     # The judger contiguity bug: \\quad / multi-box truncates to last box.
     assert "\\quad" in RUNB_SYSTEM_PROMPT_FREE
     assert "\\qquad" in RUNB_SYSTEM_PROMPT_FREE
-    assert "Do NOT use multiple separate \\boxed{} blocks" in RUNB_SYSTEM_PROMPT_FREE
+    assert "Do NOT use multiple \\boxed{} blocks" in RUNB_SYSTEM_PROMPT_FREE
 
 
 def test_runb_free_has_symbolic_preference() -> None:
     # Targets private gold distribution: -7\sqrt{149}/149 etc.
-    assert "symbolic" in RUNB_SYSTEM_PROMPT_FREE.lower()
+    assert "irrational" in RUNB_SYSTEM_PROMPT_FREE.lower()
     assert "\\sqrt" in RUNB_SYSTEM_PROMPT_FREE
-    assert "do not\nconvert to a decimal" in RUNB_SYSTEM_PROMPT_FREE or \
-           "do not convert" in RUNB_SYSTEM_PROMPT_FREE.lower()
+    assert "do not convert" in RUNB_SYSTEM_PROMPT_FREE.lower()
+
+
+def test_runb_free_does_not_use_ambiguous_e_or_log() -> None:
+    # Bare "e" and "log" trigger over-symbolic-ification on questions
+    # where e is a variable name or where log has multiple LaTeX forms.
+    # Use \ln and e^x instead — both are unambiguous.
+    assert ", e," not in RUNB_SYSTEM_PROMPT_FREE
+    assert ", log," not in RUNB_SYSTEM_PROMPT_FREE
 
 
 def test_runb_free_no_anti_rounding_or_token_rescue() -> None:
@@ -289,5 +296,5 @@ def test_build_prompt_runb_mcq_user_includes_labels() -> None:
 
 def test_runb_free_prompt_under_token_budget() -> None:
     # Length sanity: stay well under v6's 349-token Phase 1 prompt.
-    # Rough char/token ratio is ~4. 700 chars ≈ 175 tokens.
-    assert len(RUNB_SYSTEM_PROMPT_FREE) < 700
+    # Rough char/token ratio is ~4. 600 chars ≈ 150 tokens.
+    assert len(RUNB_SYSTEM_PROMPT_FREE) < 600
