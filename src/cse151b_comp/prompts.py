@@ -190,6 +190,70 @@ def build_prompt_runb(question: str, options: list[str] | None) -> tuple[str, st
     return RUNB_SYSTEM_PROMPT_FREE, question
 
 
+# ─── Run C: Run B + structural end-with-box rule + text/bool examples ─────
+#
+# Run B (leaderboard 0.600) left two failure modes on private:
+#
+# 1. 113/943 = 12 % no-``\\boxed{}`` rate, 75 % of which had response > 30k
+#    chars — i.e. Qwen ran out of token budget mid-thinking and never
+#    reached a final answer. Adding budget alone doesn't fully fix this
+#    because some traces are simply too verbose. We need a structural
+#    rule that cues the model to *always* emit a final ``\\boxed{}``.
+# 2. Run B's free-form prompt only gave mathematical examples, so
+#    free_single's boxed-rate dipped from v5's 81.8 % to 80.5 %. The
+#    likely cause is the model treating the symbolic-preference rule as
+#    "answer must be mathematical", suppressing valid text/bool answers.
+#
+# Run C addresses both:
+#
+# 1. **End-with-box rule** (both prompts). Phrased as an unconditional
+#    structural ending, *not* as a "if running out, output guess"
+#    fallback. v2 Phase 1 tried the latter and the model produced
+#    literal ``\\boxed{...}`` placeholder text. Run C frames the box as
+#    the natural end of the response, not as a panic button.
+# 2. **Text/bool examples** in the free-form prompt: ``\\boxed{Yes}``,
+#    ``\\boxed{Tuesday}``, ``\\boxed{True}``. This counter-balances the
+#    symbolic-preference rule for non-numeric answers.
+#
+# Length budget: Run B was 87 / 137 tokens (MCQ / free). Run C target
+# under 110 / 175 tokens. Both still well under the 349-token Phase 1
+# regression zone.
+
+RUNC_SYSTEM_PROMPT_MCQ = (
+    "You are an expert mathematician. Read the problem and the answer "
+    "choices, then select the single best answer.\n\n"
+    "Output ONLY the letter inside \\boxed{}, e.g. \\boxed{C}. "
+    "Do NOT write \\boxed{(C)}, \\boxed{C.}, or \\boxed{C)}. "
+    "Do NOT include the option content or any \\text{} / \\textbf{} macros.\n\n"
+    "Your response must end with exactly one \\boxed{X} containing your "
+    "chosen letter."
+)
+
+RUNC_SYSTEM_PROMPT_FREE = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "If the exact answer is irrational (involves \\sqrt, \\pi, e^x, \\ln, "
+    "or unsimplified fractions \\frac{p}{q}), keep it symbolic — write "
+    "\\boxed{2\\pi}, \\boxed{\\frac{1}{2}}, "
+    "\\boxed{-\\frac{7\\sqrt{149}}{149}} — do not convert to decimal "
+    "unless the question asks for one. For text or boolean answers, use "
+    "the natural form: \\boxed{Yes}, \\boxed{Tuesday}, \\boxed{True}."
+)
+
+
+def build_prompt_runc(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run C prompt builder: Run B + end-with-box + text/bool examples."""
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNC_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    return RUNC_SYSTEM_PROMPT_FREE, question
+
+
 # ─── Build prompt ─────────────────────────────────────────────────────────
 
 

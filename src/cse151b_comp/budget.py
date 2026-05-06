@@ -72,7 +72,7 @@ def allocate_max_tokens(question: str, options: list[str] | None) -> int:
 
     - ``options`` truthy → MCQ. Budget scales with ``len(options)``
       because the Qwen3-Thinking model tends to enumerate every option
-      in its reasoning trace. Capped at 16k (10-option case).
+      in its reasoning trace. Capped at 18k (10-option case).
     - ``[ANS]`` count or ``(a)/(b)/(c)`` markers >= 2 → multi-part.
       Budget scales linearly with K, capped at 22k.
     - else → free-form single. Flat at the floor (12k) — matches
@@ -80,11 +80,17 @@ def allocate_max_tokens(question: str, options: list[str] | None) -> int:
 
     All branches floor at ``_FLOOR = 12000`` so the worst-case budget
     matches the Phase 0 ``max_tokens=12288`` baseline exactly.
+
+    Run C calibration (vs Run B): MCQ formula raised from
+    ``8000 + 800·n cap 16k`` to ``8000 + 1000·n cap 18k``. The 10-option
+    bucket holds 89 % of all private MCQ (267 / 300) and was Run B's
+    worst no-box class (29 / 267 = 10.9 % truncated). +2 k headroom is
+    the cheapest available rescue for that bucket.
     """
     if options:
-        # MCQ: 4 opt → 12k (floor), 5 opt → 12k (floor), 8 opt → 14.4k, 10 opt → 16k
+        # MCQ: 4 opt → 12k (floor), 5 opt → 13k, 8 opt → 16k, 10 opt → 18k
         n_opts = len(options)
-        return max(_FLOOR, min(8000 + n_opts * 800, 16000))
+        return max(_FLOOR, min(8000 + n_opts * 1000, 18000))
 
     n_parts = _count_parts(question)
     if n_parts >= 2:

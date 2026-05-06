@@ -9,32 +9,33 @@ from cse151b_comp.budget import _CEILING, _FLOOR, allocate_max_tokens
 
 
 def test_mcq_4_options_clamped_to_floor() -> None:
-    # 8000 + 4*800 = 11200 — below floor (12000), clamps up.
+    # 8000 + 4*1000 = 12000 — at floor.
     assert allocate_max_tokens("Q?", ["a", "b", "c", "d"]) == _FLOOR
 
 
-def test_mcq_5_options_clamped_to_floor() -> None:
-    # 8000 + 5*800 = 12000 — at floor.
-    assert allocate_max_tokens("Q?", ["a", "b", "c", "d", "e"]) == _FLOOR
+def test_mcq_5_options_above_floor() -> None:
+    # 8000 + 5*1000 = 13000.
+    assert allocate_max_tokens("Q?", ["a", "b", "c", "d", "e"]) == 13000
 
 
 def test_mcq_2_options_clamped_to_floor() -> None:
-    # 8000 + 2*800 = 9600 — below floor, clamps to 12000.
+    # 8000 + 2*1000 = 10000 — below floor, clamps to 12000.
     assert allocate_max_tokens("Q?", ["a", "b"]) == _FLOOR
 
 
-def test_mcq_8_options_above_floor() -> None:
-    # 8000 + 8*800 = 14400.
-    assert allocate_max_tokens("Q?", [str(i) for i in range(8)]) == 14400
+def test_mcq_8_options() -> None:
+    # 8000 + 8*1000 = 16000.
+    assert allocate_max_tokens("Q?", [str(i) for i in range(8)]) == 16000
 
 
-def test_mcq_10_options_caps_at_16k() -> None:
-    # 8000 + 10*800 = 16000 — at MCQ ceiling.
-    assert allocate_max_tokens("Q?", [str(i) for i in range(10)]) == 16000
+def test_mcq_10_options_caps_at_18k() -> None:
+    # 8000 + 10*1000 = 18000 — at the new MCQ ceiling (was 16k in Run B).
+    # 10-opt is 89% of private MCQ (267/300) and Run B's worst no-box bucket.
+    assert allocate_max_tokens("Q?", [str(i) for i in range(10)]) == 18000
 
 
-def test_mcq_15_options_still_caps_at_16k() -> None:
-    assert allocate_max_tokens("Q?", [str(i) for i in range(15)]) == 16000
+def test_mcq_15_options_still_caps_at_18k() -> None:
+    assert allocate_max_tokens("Q?", [str(i) for i in range(15)]) == 18000
 
 
 # ─── Multi-part scaling ─────────────────────────────────────────────────────

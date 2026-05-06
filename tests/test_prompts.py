@@ -12,12 +12,15 @@ from __future__ import annotations
 from cse151b_comp.prompts import (
     RUNB_SYSTEM_PROMPT_FREE,
     RUNB_SYSTEM_PROMPT_MCQ,
+    RUNC_SYSTEM_PROMPT_FREE,
+    RUNC_SYSTEM_PROMPT_MCQ,
     SYSTEM_PROMPT_FREE_MULTI,
     SYSTEM_PROMPT_FREE_SINGLE,
     SYSTEM_PROMPT_MATH,
     SYSTEM_PROMPT_MCQ,
     build_prompt,
     build_prompt_runb,
+    build_prompt_runc,
     detect_question_type,
 )
 
@@ -298,3 +301,101 @@ def test_runb_free_prompt_under_token_budget() -> None:
     # Length sanity: stay well under v6's 349-token Phase 1 prompt.
     # Rough char/token ratio is ~4. 600 chars ≈ 150 tokens.
     assert len(RUNB_SYSTEM_PROMPT_FREE) < 600
+
+
+# ─── Run C prompt rules ────────────────────────────────────────────────────
+
+
+def test_runc_inherits_runb_anti_pattern_rules() -> None:
+    # Run C must keep all of Run B's working anti-pattern rules.
+    assert "\\quad" in RUNC_SYSTEM_PROMPT_FREE
+    assert "\\qquad" in RUNC_SYSTEM_PROMPT_FREE
+    assert "Do NOT use multiple \\boxed{} blocks" in RUNC_SYSTEM_PROMPT_FREE
+    assert "irrational" in RUNC_SYSTEM_PROMPT_FREE.lower()
+    assert "\\sqrt" in RUNC_SYSTEM_PROMPT_FREE
+    assert "\\boxed{(C)}" in RUNC_SYSTEM_PROMPT_MCQ
+    assert "\\boxed{C.}" in RUNC_SYSTEM_PROMPT_MCQ
+
+
+def test_runc_mcq_has_end_with_box_rule() -> None:
+    # Run C addition: structural end-with-box rule.
+    assert "must end with" in RUNC_SYSTEM_PROMPT_MCQ.lower()
+    assert "\\boxed{X}" in RUNC_SYSTEM_PROMPT_MCQ
+
+
+def test_runc_free_has_end_with_box_rule() -> None:
+    # Run C addition: structural end-with-box rule (free-form variant).
+    assert "End your response" in RUNC_SYSTEM_PROMPT_FREE
+
+
+def test_runc_free_has_text_bool_examples() -> None:
+    # Run C addition: counter-balance the symbolic-preference rule for
+    # non-numeric answers.
+    assert "\\boxed{Yes}" in RUNC_SYSTEM_PROMPT_FREE
+    assert "\\boxed{Tuesday}" in RUNC_SYSTEM_PROMPT_FREE
+    assert "\\boxed{True}" in RUNC_SYSTEM_PROMPT_FREE
+
+
+def test_runc_does_not_use_v2_token_rescue_phrasing() -> None:
+    # v2 Phase 1's token-rescue phrasing produced literal \\boxed{...}
+    # placeholders. Run C avoids the "if running out" trigger.
+    for prompt in (RUNC_SYSTEM_PROMPT_MCQ, RUNC_SYSTEM_PROMPT_FREE):
+        assert "running out" not in prompt
+        assert "best-guess" not in prompt
+        assert "best guess" not in prompt
+        assert "if you are unable" not in prompt.lower()
+
+
+def test_runc_does_not_have_anti_rounding_or_token_rescue() -> None:
+    # Inherited from Run B: these Phase 1 rules regressed on private.
+    for prompt in (RUNC_SYSTEM_PROMPT_MCQ, RUNC_SYSTEM_PROMPT_FREE):
+        assert "Do not round" not in prompt
+        assert "6 significant figures" not in prompt
+
+
+def test_runc_does_not_use_ambiguous_e_or_log() -> None:
+    # Same guard as Run B against bare "e" and "log".
+    assert ", e," not in RUNC_SYSTEM_PROMPT_FREE
+    assert ", log," not in RUNC_SYSTEM_PROMPT_FREE
+
+
+def test_runc_two_prompts_distinct() -> None:
+    assert RUNC_SYSTEM_PROMPT_MCQ != RUNC_SYSTEM_PROMPT_FREE
+
+
+def test_runc_distinct_from_runb() -> None:
+    # Verify Run C actually differs from Run B (no accidental no-op).
+    assert RUNC_SYSTEM_PROMPT_MCQ != RUNB_SYSTEM_PROMPT_MCQ
+    assert RUNC_SYSTEM_PROMPT_FREE != RUNB_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_runc_routes_mcq_by_options() -> None:
+    sys_p, _ = build_prompt_runc("Q?", ["a", "b"])
+    assert sys_p is RUNC_SYSTEM_PROMPT_MCQ
+
+
+def test_build_prompt_runc_routes_freeform_when_no_options() -> None:
+    sys_p, _ = build_prompt_runc("Compute 1+1.", None)
+    assert sys_p is RUNC_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_runc_freeform_used_for_multipart_too() -> None:
+    sys_p, _ = build_prompt_runc("(a) X (b) Y (c) Z", None)
+    assert sys_p is RUNC_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_runc_mcq_user_includes_labels() -> None:
+    _, user = build_prompt_runc("What is 2+2?", ["3", "4", "5"])
+    assert "A. 3" in user
+    assert "B. 4" in user
+    assert "C. 5" in user
+
+
+def test_runc_prompts_under_token_budget() -> None:
+    # Length sanity: Run C is allowed to grow ~25% over Run B for the
+    # end-with-box rule + text examples, but stay well under Phase 1's
+    # 349-token regression zone.
+    # MCQ: ~110 tokens / ~440 chars
+    # FREE: ~175 tokens / ~700 chars
+    assert len(RUNC_SYSTEM_PROMPT_MCQ) < 500
+    assert len(RUNC_SYSTEM_PROMPT_FREE) < 750

@@ -98,7 +98,10 @@ def _select_prompt_builder(name: str):
     if name == "runb":
         from cse151b_comp.prompts import build_prompt_runb
         return build_prompt_runb
-    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current, runb")
+    if name == "runc":
+        from cse151b_comp.prompts import build_prompt_runc
+        return build_prompt_runc
+    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc")
 
 
 # ─── Question type ─────────────────────────────────────────────────────────
@@ -165,10 +168,12 @@ def main() -> None:
     p.add_argument("--top-p", type=float, default=0.95)
     p.add_argument("--top-k", type=int, default=20)
     p.add_argument("--max-tokens", type=int, default=12288, dest="max_tokens")
-    p.add_argument("--prompt", default="phase0", choices=["phase0", "current", "runb"],
-                   help="Which prompt set to use. phase0 = starter (v5_sanity), "
-                        "current = src/cse151b_comp/prompts.py (v6 per-type), "
-                        "runb = Phase 0 base + anti-pattern rules + symbolic preference.")
+    p.add_argument("--prompt", default="phase0",
+                   choices=["phase0", "current", "runb", "runc"],
+                   help="Which prompt set to use. phase0 = starter (v5_sanity 0.583), "
+                        "current = v6 per-type (0.448, retired), "
+                        "runb = Phase 0 + anti-pattern + symbolic preference (0.600), "
+                        "runc = Run B + end-with-box + text/bool examples.")
     p.add_argument("--per-type-budget", action="store_true",
                    help="Use cse151b_comp.budget.allocate_max_tokens per question instead "
                         "of the flat --max-tokens value. Overrides --max-tokens.")
