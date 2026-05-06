@@ -18,6 +18,8 @@ from cse151b_comp.prompts import (
     RUND_SYSTEM_PROMPT_MCQ,
     RUNE_SYSTEM_PROMPT_FREE_BASE,
     RUNE_SYSTEM_PROMPT_MCQ,
+    RUNF_SYSTEM_PROMPT_FREE,
+    RUNF_SYSTEM_PROMPT_MCQ,
     SYSTEM_PROMPT_FREE_MULTI,
     SYSTEM_PROMPT_FREE_SINGLE,
     SYSTEM_PROMPT_MATH,
@@ -27,6 +29,7 @@ from cse151b_comp.prompts import (
     build_prompt_runc,
     build_prompt_rund,
     build_prompt_rune,
+    build_prompt_runf,
     detect_question_type,
 )
 
@@ -658,3 +661,136 @@ def test_rune_prompts_under_token_budget() -> None:
     # (= ~350 tokens, just under Phase 1's 349-token regression line).
     assert len(RUNE_SYSTEM_PROMPT_MCQ) < 800
     assert len(RUNE_SYSTEM_PROMPT_FREE_BASE) < 1400
+
+
+# ─── Run F prompt rules ────────────────────────────────────────────────────
+
+
+def test_runf_inherits_runb_anti_pattern_rules() -> None:
+    assert "\\quad" in RUNF_SYSTEM_PROMPT_FREE
+    assert "\\qquad" in RUNF_SYSTEM_PROMPT_FREE
+    assert "Do NOT use multiple \\boxed{} blocks" in RUNF_SYSTEM_PROMPT_FREE
+    assert "\\boxed{(C)}" in RUNF_SYSTEM_PROMPT_MCQ
+    assert "\\boxed{C.}" in RUNF_SYSTEM_PROMPT_MCQ
+
+
+def test_runf_keeps_end_with_box_rule() -> None:
+    assert "must end with" in RUNF_SYSTEM_PROMPT_MCQ.lower()
+    assert "End your response" in RUNF_SYSTEM_PROMPT_FREE
+
+
+def test_runf_mcq_has_elimination_strategy() -> None:
+    # Run F adopts the one Run E change that worked: MCQ elimination.
+    assert "eliminate" in RUNF_SYSTEM_PROMPT_MCQ.lower()
+    assert "8+" in RUNF_SYSTEM_PROMPT_MCQ
+
+
+def test_runf_mcq_keeps_worked_example() -> None:
+    # Inherited from Run D — letter-only output discipline demonstration.
+    assert "Q:" in RUNF_SYSTEM_PROMPT_MCQ
+    assert "A:" in RUNF_SYSTEM_PROMPT_MCQ
+    assert "\\boxed{C}" in RUNF_SYSTEM_PROMPT_MCQ
+
+
+def test_runf_drops_yes_tuesday_true_inline_rule() -> None:
+    # Critical Run D bug fix: 'Yes / Tuesday / True' inline rule caused
+    # the model to substitute Yes/No for A/B in multi-part sub-answers
+    # (id=30 in val analysis).
+    free_lower = RUNF_SYSTEM_PROMPT_FREE.lower()
+    assert "yes / tuesday / true" not in free_lower
+    assert "yes/tuesday/true" not in free_lower
+    assert "natural form" not in free_lower
+    assert "boolean" not in free_lower
+
+
+def test_runf_drops_tuesday_example() -> None:
+    # Tuesday example removed; replaced with sqrt(75) for symbolic-form
+    # demo and to fix id=135 (single answer falsely split with comma).
+    assert "Tuesday" not in RUNF_SYSTEM_PROMPT_FREE
+    assert "Sunday" not in RUNF_SYSTEM_PROMPT_FREE
+
+
+def test_runf_has_sqrt75_example() -> None:
+    # New worked example: simplify sqrt(75) → 5*sqrt(3). Demonstrates
+    # symbolic preservation AND single-answer (no comma) format.
+    assert "\\sqrt{75}" in RUNF_SYSTEM_PROMPT_FREE
+    assert "\\boxed{5\\sqrt{3}}" in RUNF_SYSTEM_PROMPT_FREE
+
+
+def test_runf_keeps_circle_and_slope_examples() -> None:
+    # Inherited from Run D — these did not cause val regression in
+    # the failure analysis.
+    assert "\\boxed{9\\pi}" in RUNF_SYSTEM_PROMPT_FREE
+    assert "\\boxed{4, -7}" in RUNF_SYSTEM_PROMPT_FREE
+
+
+def test_runf_free_has_three_examples() -> None:
+    # Same count as Run D (3 worked examples), not Run E's 5-shot.
+    qa_count = RUNF_SYSTEM_PROMPT_FREE.count("Q:")
+    assert qa_count == 3
+
+
+def test_runf_does_not_have_topic_routing_or_concise_hint() -> None:
+    # Run E additions that hurt val and are NOT in Run F.
+    free_lower = RUNF_SYSTEM_PROMPT_FREE.lower()
+    assert "tip:" not in free_lower
+    assert "be concise" not in free_lower
+    assert "do not restate" not in free_lower
+
+
+def test_runf_does_not_have_anti_rounding_or_token_rescue() -> None:
+    for prompt in (RUNF_SYSTEM_PROMPT_MCQ, RUNF_SYSTEM_PROMPT_FREE):
+        assert "Do not round" not in prompt
+        assert "running out" not in prompt
+        assert "best-guess" not in prompt
+        assert "best guess" not in prompt
+
+
+def test_runf_does_not_use_ambiguous_e_or_log() -> None:
+    assert ", e," not in RUNF_SYSTEM_PROMPT_FREE
+    assert ", log," not in RUNF_SYSTEM_PROMPT_FREE
+
+
+def test_runf_distinct_from_rund() -> None:
+    assert RUNF_SYSTEM_PROMPT_MCQ != RUND_SYSTEM_PROMPT_MCQ
+    assert RUNF_SYSTEM_PROMPT_FREE != RUND_SYSTEM_PROMPT_FREE
+
+
+def test_runf_distinct_from_rune() -> None:
+    assert RUNF_SYSTEM_PROMPT_MCQ != RUNE_SYSTEM_PROMPT_MCQ
+    assert RUNF_SYSTEM_PROMPT_FREE != RUNE_SYSTEM_PROMPT_FREE_BASE
+
+
+def test_runf_two_prompts_distinct() -> None:
+    assert RUNF_SYSTEM_PROMPT_MCQ != RUNF_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_runf_routes_mcq_by_options() -> None:
+    sys_p, _ = build_prompt_runf("Q?", ["a", "b"])
+    assert sys_p is RUNF_SYSTEM_PROMPT_MCQ
+
+
+def test_build_prompt_runf_routes_freeform_when_no_options() -> None:
+    sys_p, _ = build_prompt_runf("Compute 1+1.", None)
+    assert sys_p is RUNF_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_runf_freeform_used_for_multipart_too() -> None:
+    sys_p, _ = build_prompt_runf("(a) X (b) Y (c) Z", None)
+    assert sys_p is RUNF_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_runf_mcq_user_includes_labels() -> None:
+    _, user = build_prompt_runf("What is 2+2?", ["3", "4", "5"])
+    assert "A. 3" in user
+    assert "B. 4" in user
+    assert "C. 5" in user
+
+
+def test_runf_prompts_under_token_budget() -> None:
+    # Run F is leaner than Run D (~200t free vs Run D 224t) by removing
+    # the bool inline rule and the Tuesday example. MCQ adds elim clause
+    # so MCQ is slightly longer than Run D.
+    # Hard caps: MCQ < 700 chars, free < 1100 chars.
+    assert len(RUNF_SYSTEM_PROMPT_MCQ) < 700
+    assert len(RUNF_SYSTEM_PROMPT_FREE) < 1100
