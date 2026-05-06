@@ -2,8 +2,14 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
+      # Submission CSVs must be byte-for-byte what cse151b-sc generated;
+      # any auto-fix to whitespace inside a model response is a silent
+      # mutation of what the leaderboard sees. Same for milestone PDF
+      # binary artifacts.
       - id: trailing-whitespace
+        exclude: '^submissions/.*\.csv$|^results/.*\.jsonl$|^templates/milestone-report/'
       - id: end-of-file-fixer
+        exclude: '^submissions/.*\.csv$|^results/.*\.jsonl$|^templates/milestone-report/'
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
