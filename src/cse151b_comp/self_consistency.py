@@ -102,11 +102,12 @@ def _select_prompt_builder(name: str):
 
         return getattr(_p, f"build_prompt_{name}")
     # Run J = data-driven topic routing (see src/cse151b_comp/runj.py).
-    # Sub-variants for ablation: runj_trig / runj_geom / runj_stats_hyp /
-    # runj_stats_reg / runj_stats_desc / runj_stats (combined) /
-    # runj_calc / runj_prob / runj_discrete. Each enables one branch
-    # (or one group), others fall through to Run F generic. `runj` is
-    # the full 8-branch design.
+    # Sub-variants for ablation: runj_olympiad / runj_trig / runj_geom /
+    # runj_stats_hyp / runj_stats_reg / runj_stats_desc / runj_stats
+    # (combined) / runj_calc / runj_prob / runj_discrete. Each enables
+    # one branch (or one group), others fall through to Run F generic.
+    # `runj` is the full 9-branch design; `runj_final` is dynamically
+    # composed from ablation results.
     if name.startswith("runj"):
         import cse151b_comp.runj as _rj
 
@@ -114,9 +115,10 @@ def _select_prompt_builder(name: str):
         if hasattr(_rj, attr):
             return getattr(_rj, attr)
         raise ValueError(
-            f"Unknown Run J variant {name!r}. Available: runj, runj_trig, "
-            f"runj_geom, runj_stats_hyp, runj_stats_reg, runj_stats_desc, "
-            f"runj_stats, runj_calc, runj_prob, runj_discrete"
+            f"Unknown Run J variant {name!r}. Available: runj, runj_final, "
+            f"runj_olympiad, runj_trig, runj_geom, runj_stats_hyp, "
+            f"runj_stats_reg, runj_stats_desc, runj_stats, runj_calc, "
+            f"runj_prob, runj_discrete"
         )
     raise ValueError(
         f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, "
@@ -207,6 +209,7 @@ def main() -> None:
             "runi",
             "runj",
             "runj_final",
+            "runj_olympiad",
             "runj_trig",
             "runj_geom",
             "runj_stats_hyp",

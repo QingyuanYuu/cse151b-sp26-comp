@@ -20,6 +20,7 @@ import math
 import pathlib
 
 TOPICS = [
+    "olympiad",
     "trig",
     "geometry",
     "stats_hyp_test",
@@ -84,7 +85,7 @@ def main() -> None:
     out.write_text("\n".join(keep) + "\n")
     print()
     print(f"=== Written to {out} ===")
-    print(f"Final J branches ({len(keep)}/8): {', '.join(keep)}")
+    print(f"Final J branches ({len(keep)}/9): {', '.join(keep)}")
     if drop:
         print(f"DROPPED ({len(drop)}): {', '.join(drop)}")
 

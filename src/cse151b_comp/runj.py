@@ -1,26 +1,27 @@
 """Run J — data-driven topic-routed prompts on top of Run F final.
 
 Designed using the empirical PRIVATE corpus scan in
-`reports/empirical_topic_distribution.md`. Run J's 8 branches map
+`reports/empirical_topic_distribution.md`. Run J's 9 branches map
 1:1 to `cse151b_comp.topics.detect_topic` outputs (excluding generic).
 
-Branches (per private free-form + MCQ totals, priority-routed):
+Branches (priority-routed — olympiad first as proof style trumps topic):
 
-    BRANCH              free  mcq   notes
+    BRANCH              notes
     ─────────────────────────────────────────────────────────
-    stats_hyp_test       51    2    hypothesis tests
-    stats_regression     33    7    R^2, residuals, slope/intercept
-    stats_descriptive    40    3    mean/median/sd, percentile
-    calculus              5   79    derivative/integral/limit/series merged
-    prob_combi           17   30    probability + combinatorics merged
-    geometry             79   28    triangles, circles, area
-    trig                 36   16    sin/cos and trigonometry
-    discrete_math        12   27    num_theory + sequences merged
-    (default GENERIC)   335   73    Run F final fallback
+    olympiad           proof / construction / 'find all' (~45 free open)
+    stats_hyp_test     hypothesis tests
+    stats_regression   R^2, residuals, slope/intercept
+    stats_descriptive  mean/median/sd, percentile
+    calculus           derivative/integral/limit/series merged
+    prob_combi         probability + combinatorics merged
+    geometry           triangles, circles, area
+    trig               sin/cos and trigonometry
+    discrete_math      num_theory + sequences (short-answer style)
+    (default GENERIC)  Run F final fallback
 
 Architecture:
 
-- 8 specialized branches + 1 GENERIC (= Run F final) fallback
+- 9 specialized branches + 1 GENERIC (= Run F final) fallback
 - Each branch is a complete REPLACE-style prompt (no append-suffix)
 - Length kept under ~250 tokens per branch (Phase 1 reasoning-drift
   threshold is 349 tokens)
@@ -158,6 +159,29 @@ _BRANCH_PROB_COMBI = (
     "A: C(3,2)·(1/2)^3 = 3/8. \\boxed{3/8}"
 )
 
+_BRANCH_OLYMPIAD = (
+    "You are an expert mathematician solving an olympiad / proof-style "
+    "problem. Construct a complete, rigorous argument step-by-step.\n\n"
+    "End your response with the final answer inside \\boxed{}. The answer "
+    "may be a value, an explicit set ({1, 2, 3} or {n: n is prime}), or "
+    "a closed-form expression. Use ONE \\boxed{}; do NOT use multiple "
+    "\\boxed{} blocks.\n\n"
+    "Olympiad strategy:\n"
+    "- Identify what is being asked: prove an identity, find ALL solutions, "
+    "construct an example, or determine an extremal value.\n"
+    "- For 'find all' problems: prove sufficiency (these work) AND "
+    "necessity (no others work). Casework on small values is fine, but "
+    "justify why larger values fail.\n"
+    "- For 'prove that' problems: end the body with QED and put the "
+    "key conclusion (or 'proved') inside \\boxed{}.\n"
+    "- Use induction, pigeonhole, or invariants when natural; cite the "
+    "principle by name.\n\n"
+    "Example:\n"
+    "Q: Find all positive integers n such that n^2 + 1 is divisible by 5.\n"
+    "A: n^2 mod 5 ∈ {0,1,4}, so n^2+1 mod 5 ∈ {1,2,0}. Divisible iff "
+    "n^2 ≡ 4 (mod 5), iff n ≡ ±2 (mod 5). \\boxed{n \\equiv 2, 3 \\pmod 5}"
+)
+
 _BRANCH_DISCRETE = (
     "You are an expert mathematician. Solve step-by-step. End your "
     "response with your final answer inside \\boxed{}.\n\n"
@@ -178,6 +202,7 @@ _BRANCH_DISCRETE = (
 
 
 _BRANCH_PROMPTS = {
+    "olympiad": _BRANCH_OLYMPIAD,
     "trig": _BRANCH_TRIG,
     "geometry": _BRANCH_GEOMETRY,
     "stats_hyp_test": _BRANCH_STATS_HYP,
@@ -220,6 +245,7 @@ def _make_ablation(enabled_topics: tuple[str, ...]):
 
 
 # Single-topic ablations (one branch only)
+build_prompt_runj_olympiad = _make_ablation(("olympiad",))
 build_prompt_runj_trig = _make_ablation(("trig",))
 build_prompt_runj_geom = _make_ablation(("geometry",))
 build_prompt_runj_stats_hyp = _make_ablation(("stats_hyp_test",))
@@ -235,6 +261,7 @@ build_prompt_runj_stats = _make_ablation(("stats_hyp_test", "stats_regression", 
 
 __all__ = [
     "build_prompt_runj",
+    "build_prompt_runj_olympiad",
     "build_prompt_runj_trig",
     "build_prompt_runj_geom",
     "build_prompt_runj_stats_hyp",

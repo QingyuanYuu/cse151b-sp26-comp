@@ -13,6 +13,7 @@ import pathlib
 
 # Topics tested in the ablation harness (matches run_j_ablation.sh PAIRS)
 TOPICS = [
+    "olympiad",
     "trig",
     "geometry",
     "stats_hyp_test",

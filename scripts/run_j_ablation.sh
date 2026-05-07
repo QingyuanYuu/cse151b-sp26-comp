@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 #
-# Run J branch ablation (UPDATED 8-branch design):
+# Run J branch ablation (9-branch design with olympiad split out):
 # Test each Run J branch on its target topic eval subset.
 #
-# Branches tested (and their eval subset sizes from data/eval_subsets/):
-#   trig              43
-#   geometry          50
-#   stats_hyp_test    50
-#   stats_regression  28
-#   stats_descriptive 50
-#   calculus           7  ← weak signal (free-form calc is tiny on this corpus)
-#   prob_combi        24
-#   discrete_math      6  ← weak signal
+# Branches tested (eval subset sizes regenerated after olympiad split):
+#   olympiad          ~45  proof / construction / 'find all'
+#   trig              ~43
+#   geometry          ~50
+#   stats_hyp_test    ~50
+#   stats_regression  ~28
+#   stats_descriptive ~50
+#   calculus           ~7  ← weak signal (free-form calc is tiny on this corpus)
+#   prob_combi        ~24
+#   discrete_math      *   ← shrinks after olympiad pulled out
 #
 # Plus baseline Run F on each subset for paired comparison.
-# Total: 16 inferences, ~1h K=1 wallclock.
+# Total: 18 inferences, ~1.5h K=1 wallclock.
 #
 # After SC finishes: auto re-judges with Judger.auto_judge (Run J ablation
 # was launched after the bug fix in self_consistency.py, so `correct`
@@ -70,6 +71,7 @@ run_one() {
 # Topic → ablation prompt name mapping
 # (each ablation enables ONE branch; rest fall through to Run F generic)
 declare -a PAIRS=(
+    "olympiad:runj_olympiad"
     "trig:runj_trig"
     "geometry:runj_geom"
     "stats_hyp_test:runj_stats_hyp"
@@ -127,9 +129,9 @@ Started Run J ablation (UPDATED 8-branch design).
   PID:    $PID
   Log:    $LOG
 
-Will run 16 inferences:
-  8 baselines (Run F on each topic subset)
-  8 variants  (each Run J branch on its target subset)
+Will run 18 inferences:
+  9 baselines (Run F on each topic subset)
+  9 variants  (each Run J branch on its target subset)
 
 Then auto re-judge with Judger.auto_judge and run summarize_j_ablation.py.
 

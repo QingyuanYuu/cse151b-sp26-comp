@@ -3,8 +3,9 @@
 Designed using the comprehensive PRIVATE corpus scan (multi-signal regex,
 priority-routed, sample-verified) — see `reports/empirical_topic_distribution.md`.
 
-Returns one of 9 BRANCH names (not fine-grained topics):
+Returns one of 10 BRANCH names (not fine-grained topics):
 
+    olympiad          — proof / construction style (highest priority — trumps topic)
     stats_hyp_test    — hypothesis tests (t/F/chi-square, p-value, reject)
     stats_regression  — regression (R^2, residuals, slope/intercept)
     stats_descriptive — mean/median/sd, percentile, quartile
@@ -21,10 +22,11 @@ Dropped vs earlier Run I:
 - ALGEBRA_POLY (8 free-form private; merge with generic)
 - DIFF_EQ, COMPLEX, OPTIMIZATION (each < 10 questions, drop)
 
-Priority order: most-specific stats first, then calc, then prob/combi,
-then geometry/trig, then discrete, then generic. Stats sub-routes are
-mutually exclusive (a question with both 'hypothesis test' and
-'regression' keywords goes to whichever is detected first per priority).
+Priority order: olympiad first (proof/construction trumps topic — an
+olympiad number-theory question needs proof-style reasoning, not a
+short-answer DISCRETE_MATH prompt). Then most-specific stats, then
+calc, then prob/combi, then geometry/trig, then discrete, then generic.
+Stats sub-routes are mutually exclusive.
 """
 
 from __future__ import annotations
@@ -32,6 +34,64 @@ from __future__ import annotations
 import re
 
 # ─── Regex patterns per topic (word-boundary aware to avoid false +) ──
+
+# Olympiad / proof — must come FIRST (proof style overrides any topic).
+#
+# Built from a manual scan of private.jsonl free-form questions WITHOUT
+# `[ANS]` blanks (50 questions, mostly olympiad-style). Strong signals:
+#
+# 1. Explicit proof verbs: "prove that", "show that", "demonstrate that"
+# 2. Contest references: IMO, USAMO, Putnam, AIME, AMC
+# 3. Math letter-sets: \mathbb{Z}, \mathbb{N}, \mathbb{R}, \mathbb{Q}, \mathbb{C}
+#    (textbook word problems almost never use these)
+# 4. Function-definition opener: "Let f :" or "f : A \to B"
+# 5. Quantifier setup: "for all integers", "for every prime",
+#    "such that for all", "does there exist", "infinitely many"
+# 6. Find-all enumeration: "find all positive integers / triples / functions"
+# 7. Game setup: "Alice and Bob", "two players", "play a game"
+#
+# Tuned to OVER-route into olympiad rather than under-route — false
+# positive (textbook → proof prompt) is mild; false negative (olympiad
+# → short-answer prompt) is severe.
+_OLYMPIAD_RE = re.compile(
+    # Explicit proof verbs
+    r"\bprove\s+(that|the|by|or)\b|\bshow\s+that\b|\bdemonstrate\s+that\b|"
+    # Contest references
+    r"\b(IMO|USAMO|USAJMO|Putnam|AMC|AIME|olympiad)\b|"
+    # \mathbb{Z}, \mathbb{N}, \mathbb{R}, \mathbb{Q}, \mathbb{C} — strong olympiad signal
+    r"\\mathbb\s*\{[ZNRQC]\}|"
+    # Function-definition: requires explicit \to or \rightarrow (avoids the
+    # noisy "any letter : N" trap which matched stats notation like "n: N")
+    r"[a-zA-Z]\s*:\s*[\$\\\w\s]{0,15}\\(to|rightarrow)\b|"
+    # find/determine all <object>
+    r"\b(determine|find)\s+all\s+("
+    r"positive\s+integers?|natural\s+numbers?|primes?|integers?|"
+    r"real\s+numbers?|triples?|pairs?|polynomials?|functions?|"
+    r"values?\s+of|solutions?|(n|m|k|x|y)\s+(such|with|that)"
+    r")\b|"
+    # Quantifier setups
+    r"\bsuch\s+that\s+for\s+(all|every|any)\b|"
+    r"\bfor\s+(every|all|any)\s+(positive\s+integer|prime|integer|real)\b|"
+    r"\bdoes\s+there\s+exist\b|\binfinitely\s+many\b|"
+    # Game-theoretic / olympiad combinatorics setup
+    r"\b(Alice\s+and\s+Bob|two\s+players?\s+play|play\s+a\s+game)\b|"
+    # Constructive language
+    r"\bconstruct\s+(a|an|the)\s+\w+\s+(such|that|with)\b|"
+    # "Determine the maximum/minimum POSSIBLE / VALUE OF / REAL NUMBER" —
+    # the qualifier disambiguates olympiad ("determine the max possible
+    # value of x") from textbook ("find the minimum of the data set").
+    r"\b(determine|compute|find)\s+the\s+(maximum|minimum|largest|smallest|"
+    r"least|greatest)\s+(possible|positive\s+integer|real\s+number|"
+    r"value\s+of\s+(?!the\s+(mean|median|sample|sum)))|"
+    # "Let $X$ be a ..." opener with abstract objects
+    r"\bLet\s+\$?[A-Z][_a-z\d]*\$?\s+be\s+(a|an|the|several)\s+"
+    r"(set|sequence|polygon|polynomial|polynomi|graph|"
+    r"region|function|positive\s+integer|prime|"
+    r"finite|simple|convex|family|collection|tree)|"
+    r"\bLet\s+\$?[a-z]\$?\s+(and\s+\$?[a-z]\$?\s+)?be\s+"
+    r"(a|an|the)?\s*positive\s+integers?\b",
+    re.IGNORECASE,
+)
 
 _STATS_HYP_RE = re.compile(
     r"\bhypothes(is|es)\b|\bnull\s+hypothes|\balternative\s+hypothes|"
@@ -139,11 +199,14 @@ def detect_topic(question: str) -> str:
     objects), then geometry / trig, then discrete (catch-all for
     number / sequence questions), then generic.
 
-    Returns one of: stats_hyp_test, stats_regression, stats_descriptive,
-    calculus, prob_combi, geometry, trig, discrete_math, generic.
+    Returns one of: olympiad, stats_hyp_test, stats_regression,
+    stats_descriptive, calculus, prob_combi, geometry, trig,
+    discrete_math, generic.
     """
     q = question  # patterns are IGNORECASE
 
+    if _OLYMPIAD_RE.search(q):
+        return "olympiad"
     if _STATS_HYP_RE.search(q):
         return "stats_hyp_test"
     if _STATS_REG_RE.search(q):
@@ -165,6 +228,7 @@ def detect_topic(question: str) -> str:
 
 # Helper for downstream stats / debugging
 ALL_BRANCHES = (
+    "olympiad",
     "stats_hyp_test",
     "stats_regression",
     "stats_descriptive",
