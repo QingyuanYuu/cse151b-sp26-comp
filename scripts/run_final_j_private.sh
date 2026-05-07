@@ -88,6 +88,11 @@ boxed = sum(1 for r in rows if '\\\\boxed{' in r.get('winning_response', ''))
 print(f'Rows with \\\\boxed{{}}: {boxed} / {len(rows)}')
 PY
 
+    # Belt-and-braces rejudge with Judger.auto_judge (same as public).
+    # Private has no answer field so this is a no-op now, but keeps the
+    # pipeline pattern uniform and ready if private answers ever publish.
+    PYTHONPATH=src .venv/bin/python scripts/rejudge_jsonl.py '$OUTPUT' 2>&1 | tail -8
+
     rc=\$?
     rm -f '$PID_FILE'
     exit \$rc
