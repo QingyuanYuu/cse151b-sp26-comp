@@ -185,8 +185,8 @@ def main() -> None:
                         "current = v6 per-type (0.448, retired), "
                         "runb = Phase 0 + anti-pattern + symbolic preference (0.600), "
                         "runc = Run B + end-with-box + text/bool examples, "
-                        "rund = Run C + 1-3 few-shot worked examples (val 63.56%), "
-                        "rune = Run D + topic routing + 5-shot (val 56.89%, retired), "
+                        "rund = Run C + 1-3 few-shot worked examples (val 63.56pct), "
+                        "rune = Run D + topic routing + 5-shot (val 56.89pct, retired), "
                         "runf = Run D core - bool rule - Tuesday + sqrt75 + MCQ elim.")
     p.add_argument("--per-type-budget", action="store_true",
                    help="Use cse151b_comp.budget.allocate_max_tokens per question instead "

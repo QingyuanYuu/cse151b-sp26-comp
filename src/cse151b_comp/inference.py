@@ -101,8 +101,11 @@ def _select_prompt_builder(name: str):
         return build_prompt_rune
     if name == "runf":
         return build_prompt_runf
+    if name == "rung":
+        # Run G uses Run F's prompt verbatim; the difference is the v2 budget.
+        return build_prompt_runf
     raise ValueError(
-        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf"
+        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung"
     )
 
 
@@ -123,17 +126,22 @@ def main() -> None:
     p.add_argument("--no-judge", action="store_true",
                    help="Skip judger scoring (use for private-set runs).")
     p.add_argument("--prompt", default="current",
-                   choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf"],
+                   choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf", "rung"],
                    help="Which prompt set to use. phase0 = starter (v5_sanity 0.583), "
                         "current = v6 per-type (0.448, retired), "
                         "runb = Phase 0 + anti-pattern + symbolic preference (0.600), "
                         "runc = Run B + end-with-box + text/bool examples, "
-                        "rund = Run C + 1-3 few-shot worked examples (val 63.56%), "
-                        "rune = Run D + topic routing + 5-shot (val 56.89%, retired), "
-                        "runf = Run D core - bool rule - Tuesday + sqrt75 + MCQ elim.")
+                        "rund = Run C + 1-3 few-shot worked examples (val 63.56pct), "
+                        "rune = Run D + topic routing + 5-shot (val 56.89pct, retired), "
+                        "runf = Run D core - bool rule - Tuesday + sqrt75 + MCQ elim, "
+                        "rung = Run F prompt + v2 budget (16k floor, 20k MCQ / 24k multi cap).")
     p.add_argument("--per-type-budget", action="store_true",
                    help="Use cse151b_comp.budget.allocate_max_tokens per question instead "
                         "of the flat --max-tokens value. Overrides --max-tokens.")
+    p.add_argument("--budget-v2", action="store_true",
+                   help="Use the v2 (aggressive) budget: floor 16k, MCQ cap 20k, multi cap 24k. "
+                        "Auto-enabled when --prompt rung is selected. "
+                        "Requires --max-model-len >= 26624.")
     args = p.parse_args()
 
     _setup_env(args.gpu_id)
@@ -162,8 +170,16 @@ def main() -> None:
 
     prompt_builder = _select_prompt_builder(args.prompt)
 
-    if args.per_type_budget:
-        from cse151b_comp.budget import allocate_max_tokens
+    # Run G ⇒ auto-enable v2 budget.
+    use_v2 = args.budget_v2 or args.prompt == "rung"
+    use_budget = args.per_type_budget or use_v2
+
+    if use_budget:
+        if use_v2:
+            from cse151b_comp.budget import allocate_max_tokens_v2 as _alloc
+            print(f"[budget] v2 enabled: floor=16k, MCQ cap=20k, multi cap=24k")
+        else:
+            from cse151b_comp.budget import allocate_max_tokens as _alloc
 
     prompts = []
     per_prompt_max_tokens: list[int] = []
@@ -177,12 +193,12 @@ def main() -> None:
                 add_generation_prompt=True,
             )
         )
-        if args.per_type_budget:
+        if use_budget:
             per_prompt_max_tokens.append(
-                allocate_max_tokens(item["question"], item.get("options"))
+                _alloc(item["question"], item.get("options"))
             )
 
-    if args.per_type_budget:
+    if use_budget:
         sampling_params = [
             SamplingParams(
                 max_tokens=mt,
@@ -197,7 +213,8 @@ def main() -> None:
         ]
         budget_lo = min(per_prompt_max_tokens)
         budget_hi = max(per_prompt_max_tokens)
-        print(f"Per-type budget enabled: max_tokens range [{budget_lo}, {budget_hi}]")
+        kind = "v2" if use_v2 else "v1"
+        print(f"Per-type budget enabled ({kind}): max_tokens range [{budget_lo}, {budget_hi}]")
     else:
         sampling_params = SamplingParams(
             max_tokens=args.max_tokens,

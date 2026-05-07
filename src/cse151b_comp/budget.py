@@ -98,3 +98,42 @@ def allocate_max_tokens(question: str, options: list[str] | None) -> int:
         return max(_FLOOR, min(6000 + n_parts * 2200, _CEILING))
 
     return _FLOOR  # free-form single — floored at 12k
+
+
+# ─── v2 budget (Run G): raise floor to 16k, ceilings +2k ──────────────────
+#
+# Run C private regression analysis isolated free_single's 12k allocation
+# as a likely contributor: Run B used flat 16k and didn't lose free_single
+# accuracy; Run C reduced free_single to 12k and the median response was
+# 384 chars shorter (less reasoning depth on hard questions).
+#
+# v2 raises the floor to 16k so every question gets at least Run B's
+# proven baseline budget. Ceilings also lift +2k:
+#
+# - MCQ ceiling 18k → 20k (10-opt bucket gets +2k headroom).
+# - multi-part ceiling 22k → 24k (K=8+ questions get +2k).
+#
+# Required: --max-model-len ≥ 26624 to fit 24k output + ~2k input.
+
+_FLOOR_V2 = 16000
+_CEILING_V2_MCQ = 20000
+_CEILING_V2_MULTI = 24000
+
+
+def allocate_max_tokens_v2(question: str, options: list[str] | None) -> int:
+    """v2: aggressive budget. Floor 16k, MCQ cap 20k, multi cap 24k.
+
+    Used by Run G (Run F prompt + v2 budget). Targeted fix for Run C's
+    private regression where free_single's 12k starved hard reasoning.
+    """
+    if options:
+        # MCQ: 4 opt → 16k (floor), 8 opt → 17.6k, 10 opt → 20k (cap)
+        n_opts = len(options)
+        return max(_FLOOR_V2, min(8000 + n_opts * 1200, _CEILING_V2_MCQ))
+
+    n_parts = _count_parts(question)
+    if n_parts >= 2:
+        # K=2 → 16k (floor), K=5 → 18.5k, K=8 → 24k (cap)
+        return max(_FLOOR_V2, min(6000 + n_parts * 2500, _CEILING_V2_MULTI))
+
+    return _FLOOR_V2  # free_single — floored at 16k (Run B baseline)
