@@ -12,7 +12,7 @@
 #   stats_descriptive ~50
 #   calculus           ~7  ← weak signal (free-form calc is tiny on this corpus)
 #   prob_combi        ~24
-#   discrete_math      *   ← shrinks after olympiad pulled out
+#   number_alg          *   number_theory + linear_algebra + sequences_series
 #
 # Plus baseline Run F on each subset for paired comparison.
 # Total: 18 inferences, ~1.5h K=1 wallclock.
@@ -79,7 +79,7 @@ declare -a PAIRS=(
     "stats_descriptive:runj_stats_desc"
     "calculus:runj_calc"
     "prob_combi:runj_prob"
-    "discrete_math:runj_discrete"
+    "number_alg:runj_number_alg"
 )
 
 # Run baseline (Run F) on each topic subset (control)

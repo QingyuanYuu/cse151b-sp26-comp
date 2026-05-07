@@ -104,7 +104,7 @@ def _select_prompt_builder(name: str):
     # Run J = data-driven topic routing (see src/cse151b_comp/runj.py).
     # Sub-variants for ablation: runj_olympiad / runj_trig / runj_geom /
     # runj_stats_hyp / runj_stats_reg / runj_stats_desc / runj_stats
-    # (combined) / runj_calc / runj_prob / runj_discrete. Each enables
+    # (combined) / runj_calc / runj_prob / runj_number_alg. Each enables
     # one branch (or one group), others fall through to Run F generic.
     # `runj` is the full 9-branch design; `runj_final` is dynamically
     # composed from ablation results.
@@ -118,7 +118,7 @@ def _select_prompt_builder(name: str):
             f"Unknown Run J variant {name!r}. Available: runj, runj_final, "
             f"runj_olympiad, runj_trig, runj_geom, runj_stats_hyp, "
             f"runj_stats_reg, runj_stats_desc, runj_stats, runj_calc, "
-            f"runj_prob, runj_discrete"
+            f"runj_prob, runj_number_alg"
         )
     raise ValueError(
         f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, "
@@ -218,7 +218,7 @@ def main() -> None:
             "runj_stats",
             "runj_calc",
             "runj_prob",
-            "runj_discrete",
+            "runj_number_alg",
         ],
         help="Which prompt set to use. phase0 = starter (proven 0.575 leaderboard); "
         "current = v6 per-type routing; runb/c/d/e are jason/dev's incremental "

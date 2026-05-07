@@ -35,7 +35,7 @@ TOPICS = [
     "stats_descriptive",
     "calculus",
     "prob_combi",
-    "discrete_math",
+    "number_alg",
 ]
 
 _BOXED_RE = re.compile(r"\\boxed\{")

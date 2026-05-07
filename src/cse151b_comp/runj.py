@@ -16,7 +16,7 @@ Branches (priority-routed — olympiad first as proof style trumps topic):
     prob_combi         probability + combinatorics merged
     geometry           triangles, circles, area
     trig               sin/cos and trigonometry
-    discrete_math      num_theory + sequences (short-answer style)
+    number_alg         num_theory + linear_algebra + sequences_series
     (default GENERIC)  Run F final fallback
 
 Architecture:
@@ -36,7 +36,9 @@ Vs earlier draft of Run J:
   ~5 free-form private but ~79 MCQ — though Run J only routes free)
 - MERGED probability + combinatorics → prob_combi (sample-size for
   ablation power: probability alone was 24 in eval pool, too few)
-- MERGED num_theory + sequences → discrete_math (same reason)
+- MERGED num_theory + sequences + linear_algebra → number_alg
+  (small free-form pools combined for ablation power; linalg is
+  primarily MCQ in private but added for naming consistency).
 """
 
 from __future__ import annotations
@@ -182,16 +184,19 @@ _BRANCH_OLYMPIAD = (
     "n^2 ≡ 4 (mod 5), iff n ≡ ±2 (mod 5). \\boxed{n \\equiv 2, 3 \\pmod 5}"
 )
 
-_BRANCH_DISCRETE = (
+_BRANCH_NUMBER_ALG = (
     "You are an expert mathematician. Solve step-by-step. End your "
     "response with your final answer inside \\boxed{}.\n\n"
     "For multiple sub-answers: use ONE \\boxed{} with values "
     "comma-separated. Do NOT use multiple \\boxed{} blocks.\n\n"
-    "Number-theory / sequence tips:\n"
-    "- For remainders: N mod k is the integer in [0, k-1].\n"
-    "- For gcd / lcm: show prime factorization briefly.\n"
-    "- For arithmetic sequences: a_n = a_1 + (n-1)d.\n"
-    "- For geometric sequences: a_n = a_1 · r^{n-1}.\n\n"
+    "Number theory / sequences / linear algebra tips:\n"
+    "- Remainders: N mod k is the integer in [0, k-1].\n"
+    "- gcd / lcm: show prime factorization briefly.\n"
+    "- Arithmetic sequences: a_n = a_1 + (n-1)d. Geometric: a_n = a_1·r^{n-1}.\n"
+    "- Matrix determinants and eigenvalues: keep symbolic; "
+    "characteristic polynomial det(A - \\lambda I) = 0.\n"
+    "- Linear systems: row-reduce; report variables in question order.\n"
+    "- Vector products / norms: keep exact form (\\sqrt, fractions).\n\n"
     "Example:\n"
     "Q: Find the remainder of 1000 divided by 7.\n"
     "A: 1000 = 7·142 + 6. \\boxed{6}"
@@ -210,7 +215,7 @@ _BRANCH_PROMPTS = {
     "stats_descriptive": _BRANCH_STATS_DESC,
     "calculus": _BRANCH_CALCULUS,
     "prob_combi": _BRANCH_PROB_COMBI,
-    "discrete_math": _BRANCH_DISCRETE,
+    "number_alg": _BRANCH_NUMBER_ALG,
     # 'generic' falls through to RUNF_SYSTEM_PROMPT_FREE
 }
 
@@ -253,7 +258,7 @@ build_prompt_runj_stats_reg = _make_ablation(("stats_regression",))
 build_prompt_runj_stats_desc = _make_ablation(("stats_descriptive",))
 build_prompt_runj_calc = _make_ablation(("calculus",))
 build_prompt_runj_prob = _make_ablation(("prob_combi",))
-build_prompt_runj_discrete = _make_ablation(("discrete_math",))
+build_prompt_runj_number_alg = _make_ablation(("number_alg",))
 
 # Group ablations
 build_prompt_runj_stats = _make_ablation(("stats_hyp_test", "stats_regression", "stats_descriptive"))
@@ -269,7 +274,7 @@ __all__ = [
     "build_prompt_runj_stats_desc",
     "build_prompt_runj_calc",
     "build_prompt_runj_prob",
-    "build_prompt_runj_discrete",
+    "build_prompt_runj_number_alg",
     "build_prompt_runj_stats",
     "build_prompt_runj_final",
 ]

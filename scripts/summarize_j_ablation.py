@@ -21,7 +21,7 @@ TOPICS = [
     "stats_descriptive",
     "calculus",
     "prob_combi",
-    "discrete_math",
+    "number_alg",
 ]
 
 

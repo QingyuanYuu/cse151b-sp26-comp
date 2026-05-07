@@ -13,14 +13,18 @@ Returns one of 10 BRANCH names (not fine-grained topics):
     prob_combi        — probability + combinatorics merged (small topics combined for ablation power)
     geometry          — triangles, circles, area, angles
     trig              — sin/cos/tan and trigonometry
-    discrete_math     — number theory + sequences (small topics combined)
+    number_alg        — number theory + linear algebra + sequences_series
     generic           — fallback (Run F final prompt)
 
 Dropped vs earlier Run I:
 - LOGIC_PROOF (only 6 free-form private; mostly false-positive earlier)
-- LINALG (19 MCQ but 0 free-form; Run J's branches target free-form)
 - ALGEBRA_POLY (8 free-form private; merge with generic)
 - DIFF_EQ, COMPLEX, OPTIMIZATION (each < 10 questions, drop)
+
+Linear algebra (~24 MCQ in private, 0 free-form) is folded into the
+number_alg branch. Run J currently routes only free-form so the
+practical impact is minimal, but the branch is named to match the
+manual classification and ready if we extend Run J to MCQ later.
 
 Priority order: olympiad first (proof/construction trumps topic — an
 olympiad number-theory question needs proof-style reasoning, not a
@@ -174,16 +178,32 @@ _TRIG_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Discrete math: num theory + sequences (small topics merged)
-_DISCRETE_RE = re.compile(
+# number_alg: number_theory + linear_algebra + sequences_series merged
+# (renamed from discrete_math; linear algebra added).
+_NUMBER_ALG_RE = re.compile(
+    # Number theory
     r"\bprime\s+(number|factor|factorization)\b|\bprime\b|"
     r"\bdivisib(le|ility)\b|\bmodulo\b|\bmod\s+\d|\bremainder\b|"
     r"\bgcd\b|\blcm\b|\bcongruent\s+modulo\b|\bdiophantine\b|"
     r"\bperfect\s+square\b|\bconsecutive\s+integer|"
+    # Sequences / series (the recurrence/closed-form kind, not calc series)
     r"\b(arithmetic|geometric)\s+sequence\b|"
     r"\bcommon\s+(ratio|difference)\b|"
     r"\brecurrence\b|\bfibonacci\b|"
-    r"\bnth\s+term\b|\b(a_n|a_\{n\})|\brecursive\s+formula\b",
+    r"\bnth\s+term\b|\b(a_n|a_\{n\})|\brecursive\s+formula\b|"
+    # Linear algebra
+    r"\b(matrix|matrices)\b|\bdeterminant\b|\beigen(value|vector|space)s?\b|"
+    r"\bcharacteristic\s+(polynomial|equation)\b|"
+    r"\bvector\s+space\b|\bsubspace\b|\b(row|column)\s+space\b|"
+    r"\b(linearly\s+(in)?dependent|linear\s+combination)\b|"
+    r"\b(orthogonal|orthonormal)\s+(basis|vectors?)\b|"
+    r"\b(rank|nullity|null\s+space|kernel)\s+of\b|"
+    r"\b(invertible|singular)\s+matrix\b|"
+    r"\b(transpose|inverse)\s+of\s+(a\s+|the\s+)?matrix\b|"
+    r"\b(dot|cross|inner)\s+product\b|"
+    r"\bdiagonali(z|s)(e|ed|ation|ing)\b|"
+    r"\b(row|column)\s+(reduce|operations?|echelon)\b|"
+    r"\b(gauss(ian)?\s+(elimination|reduce))\b",
     re.IGNORECASE,
 )
 
@@ -201,7 +221,9 @@ def detect_topic(question: str) -> str:
 
     Returns one of: olympiad, stats_hyp_test, stats_regression,
     stats_descriptive, calculus, prob_combi, geometry, trig,
-    discrete_math, generic.
+    number_alg, generic.
+
+    number_alg = number_theory + linear_algebra + sequences_series.
     """
     q = question  # patterns are IGNORECASE
 
@@ -221,8 +243,8 @@ def detect_topic(question: str) -> str:
         return "geometry"
     if _TRIG_RE.search(q):
         return "trig"
-    if _DISCRETE_RE.search(q):
-        return "discrete_math"
+    if _NUMBER_ALG_RE.search(q):
+        return "number_alg"
     return "generic"
 
 
@@ -236,7 +258,7 @@ ALL_BRANCHES = (
     "prob_combi",
     "geometry",
     "trig",
-    "discrete_math",
+    "number_alg",
     "generic",
 )
 
