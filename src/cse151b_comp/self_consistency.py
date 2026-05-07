@@ -108,6 +108,18 @@ def _select_prompt_builder(name: str):
     # one branch (or one group), others fall through to Run F generic.
     # `runj` is the full 9-branch design; `runj_final` is dynamically
     # composed from ablation results.
+    if name.startswith("runj_v2"):
+        import cse151b_comp.runj_v2 as _rj2
+
+        attr = "build_prompt_" + name
+        if hasattr(_rj2, attr):
+            return getattr(_rj2, attr)
+        raise ValueError(
+            f"Unknown Run J v2 variant {name!r}. Available: runj_v2, "
+            f"runj_v2_olympiad, runj_v2_trig, runj_v2_geom, runj_v2_stats_hyp, "
+            f"runj_v2_stats_reg, runj_v2_stats_desc, runj_v2_calc, runj_v2_prob, "
+            f"runj_v2_number_alg"
+        )
     if name.startswith("runj"):
         import cse151b_comp.runj as _rj
 
@@ -219,6 +231,16 @@ def main() -> None:
             "runj_calc",
             "runj_prob",
             "runj_number_alg",
+            "runj_v2",
+            "runj_v2_olympiad",
+            "runj_v2_trig",
+            "runj_v2_geom",
+            "runj_v2_stats_hyp",
+            "runj_v2_stats_reg",
+            "runj_v2_stats_desc",
+            "runj_v2_calc",
+            "runj_v2_prob",
+            "runj_v2_number_alg",
         ],
         help="Which prompt set to use. phase0 = starter (proven 0.575 leaderboard); "
         "current = v6 per-type routing; runb/c/d/e are jason/dev's incremental "
