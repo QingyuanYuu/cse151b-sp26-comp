@@ -43,14 +43,12 @@ def main() -> None:
     args = p.parse_args()
 
     public = [json.loads(line) for line in open("data/public.jsonl")]
-    val = json.loads(pathlib.Path("data/val_indices.json").read_text())
-    val_ids = set(val["val_ids"])
+    # Use full public (including val_ids) for ablation eval pool. Bigger
+    # samples per topic = better signal; val is reused only for the LoRA
+    # gate at the end, not for prompt-level ablation here.
 
-    # Pool = public minus val (free-form only; MCQ tested separately)
     pool_by_topic: dict[str, list[dict]] = {}
     for r in public:
-        if r["id"] in val_ids:
-            continue
         if r.get("options"):
             pool_by_topic.setdefault("mcq", []).append(r)
             continue

@@ -102,9 +102,11 @@ def _select_prompt_builder(name: str):
 
         return getattr(_p, f"build_prompt_{name}")
     # Run J = data-driven topic routing (see src/cse151b_comp/runj.py).
-    # Sub-variants for ablation: runj_trig / runj_geom / runj_logic /
-    # runj_stats / runj_prob / runj_num. Each enables one branch, others
-    # fall through to Run F generic. runj is the full 7-branch design.
+    # Sub-variants for ablation: runj_trig / runj_geom / runj_stats_hyp /
+    # runj_stats_reg / runj_stats_desc / runj_stats (combined) /
+    # runj_calc / runj_prob / runj_discrete. Each enables one branch
+    # (or one group), others fall through to Run F generic. `runj` is
+    # the full 8-branch design.
     if name.startswith("runj"):
         import cse151b_comp.runj as _rj
 
@@ -113,12 +115,12 @@ def _select_prompt_builder(name: str):
             return getattr(_rj, attr)
         raise ValueError(
             f"Unknown Run J variant {name!r}. Available: runj, runj_trig, "
-            f"runj_geom, runj_logic, runj_stats, runj_prob, runj_num"
+            f"runj_geom, runj_stats_hyp, runj_stats_reg, runj_stats_desc, "
+            f"runj_stats, runj_calc, runj_prob, runj_discrete"
         )
     raise ValueError(
         f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, "
-        f"rune, runf, rung, runh, runi, runj, runj_trig, runj_geom, runj_logic, "
-        f"runj_stats, runj_prob, runj_num"
+        f"rune, runf, rung, runh, runi, runj plus runj_* ablation variants"
     )
 
 
@@ -206,10 +208,13 @@ def main() -> None:
             "runj",
             "runj_trig",
             "runj_geom",
-            "runj_logic",
+            "runj_stats_hyp",
+            "runj_stats_reg",
+            "runj_stats_desc",
             "runj_stats",
+            "runj_calc",
             "runj_prob",
-            "runj_num",
+            "runj_discrete",
         ],
         help="Which prompt set to use. phase0 = starter (proven 0.575 leaderboard); "
         "current = v6 per-type routing; runb/c/d/e are jason/dev's incremental "

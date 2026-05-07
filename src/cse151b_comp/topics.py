@@ -1,209 +1,180 @@
-"""Empirical topic detection for routing free-form questions.
+"""Empirical topic detection for routing free-form questions to Run J branches.
 
-Keywords + priorities are derived from
-`reports/empirical_topic_distribution.md`'s analysis of the actual
-public + private corpus, not from intuition. The analysis identified
-TRIG / LOGIC_PROOF / GEOMETRY as the three biggest sub-domains Run I
-missed, and showed LINALG is a 30-question niche where keyword
-matching is unreliable — so LINALG has no branch in Run J.
+Designed using the comprehensive PRIVATE corpus scan (multi-signal regex,
+priority-routed, sample-verified) — see `reports/empirical_topic_distribution.md`.
 
-Detection priority (most-specific first):
+Returns one of 9 BRANCH names (not fine-grained topics):
 
-    stats_hyp_test
-    stats_regression
-    probability
-    geometry
-    num_theory
-    logic_proof
-    trig
-    (default) generic    ← Run F final
+    stats_hyp_test    — hypothesis tests (t/F/chi-square, p-value, reject)
+    stats_regression  — regression (R^2, residuals, slope/intercept)
+    stats_descriptive — mean/median/sd, percentile, quartile
+    calculus          — derivative / integral / limit / series merged
+    prob_combi        — probability + combinatorics merged (small topics combined for ablation power)
+    geometry          — triangles, circles, area, angles
+    trig              — sin/cos/tan and trigonometry
+    discrete_math     — number theory + sequences (small topics combined)
+    generic           — fallback (Run F final prompt)
 
-Stats-descriptive merges into generic (the stats_regression branch's
-prompt format already handles descriptive multi-part questions).
+Dropped vs earlier Run I:
+- LOGIC_PROOF (only 6 free-form private; mostly false-positive earlier)
+- LINALG (19 MCQ but 0 free-form; Run J's branches target free-form)
+- ALGEBRA_POLY (8 free-form private; merge with generic)
+- DIFF_EQ, COMPLEX, OPTIMIZATION (each < 10 questions, drop)
 
-Returns one of: "trig" | "geometry" | "logic_proof" | "stats_hyp_test"
-| "stats_regression" | "probability" | "num_theory" | "generic"
+Priority order: most-specific stats first, then calc, then prob/combi,
+then geometry/trig, then discrete, then generic. Stats sub-routes are
+mutually exclusive (a question with both 'hypothesis test' and
+'regression' keywords goes to whichever is detected first per priority).
 """
 
 from __future__ import annotations
 
 import re
 
-# ─── Topic keyword banks (priority-ordered detection) ──────────────────
+# ─── Regex patterns per topic (word-boundary aware to avoid false +) ──
 
-# Tier-2 specific stats branches: detected first so they don't fall through
-# to the more general probability or generic.
-_STATS_HYP_KW = (
-    "hypothesis",
-    "null hypothesis",
-    "alternative hypothesis",
-    "p-value",
-    "p value",
-    "t-test",
-    "t-statistic",
-    "f-test",
-    "f-statistic",
-    "chi-square",
-    "chi square",
-    "reject",
-    "significance level",
-    "type i error",
-    "type ii error",
-    "alpha level",
-)
-_STATS_REG_KW = (
-    "regression",
-    "least squares",
-    "r-squared",
-    "r squared",
-    "r^2",
-    "coefficient of determination",
-    "residual",
-    "slope",
-    "intercept",
-    "predicted",
-    "fitted",
+_STATS_HYP_RE = re.compile(
+    r"\bhypothes(is|es)\b|\bnull\s+hypothes|\balternative\s+hypothes|"
+    r"\bp[\s-]?value\b|\bt[\s-]?test\b|\bf[\s-]?test\b|"
+    r"\bchi[\s-]?square\b|\breject(ing|ed)?\s+(h_?0|the\s+null)|"
+    r"\bsignifican(ce|t)\s+level|\btype\s+i+\s+error\b|\balpha\s+level\b|"
+    r"\btest\s+statistic\b|\bcritical\s+value\b",
+    re.IGNORECASE,
 )
 
-# Probability & combinatorics — distinct enough from stats
-_PROB_KW = (
-    "probability",
-    "p(",
-    "expected value",
-    "bayes",
-    "binomial distribution",
-    "poisson",
-    "geometric distribution",
-    "uniform distribution",
-    "normal distribution",
-    "random variable",
-    "stochastic",
-    "markov",
-    "conditional probability",
-    "independent events",
-    "mutually exclusive",
+_STATS_REG_RE = re.compile(
+    r"\bregression\b|\bleast\s+squares\b|\br[\s-]?squared?\b|\br\^2\b|"
+    r"\bcoefficient\s+of\s+determination\b|\bresidual(s)?\b|"
+    r"\b(slope|intercept)\s+of\s+the\s+(line|regression)|"
+    r"\bpredicted\s+value\b|\bfitted\s+(value|line)\b|"
+    r"\b(beta|β)[\s_]*(0|1|hat)\b",
+    re.IGNORECASE,
 )
 
-# Num theory — small but distinct
-_NUM_KW = (
-    "prime",
-    "divisible",
-    "divisibility",
-    "modulo",
-    "remainder",
-    "factor of",
-    "gcd",
-    "lcm",
-    "congruent modulo",
-    "diophantine",
-    "perfect square",
-    "consecutive integer",
+_STATS_DESC_RE = re.compile(
+    r"\b(sample|population)\s+mean\b|\bmean\s+of\s+(the\s+)?(sample|data)|"
+    r"\bmedian\s+of\b|\bstandard\s+deviation\b|\bvariance\s+of\b|"
+    r"\binterquartile\s+range\b|\b(first|third|upper|lower)\s+quartile\b|"
+    r"\bpercentile\b|\bbox(\s|-)?plot\b|\bhistogram\b|"
+    r"\bfrequency\s+(distribution|table)\b|\bz[\s-]?score\b",
+    re.IGNORECASE,
 )
 
-# Geometry
-_GEOM_KW = (
-    "triangle",
-    "circle",
-    "rectangle",
-    "polygon",
-    "perimeter",
-    "area of",
-    "volume of",
-    "circumference",
-    "diameter",
-    "radius",
-    "angle",
-    "degrees",
-    "parallel",
-    "perpendicular",
-    "pythagorean",
-    "similar triangle",
-    "congruent",
-    "vertices",
-    "altitude",
-    "median of",
-    "centroid",
+# Calculus: any derivative / integral / limit / series → CALCULUS branch
+_CALC_RE = re.compile(
+    r"\bderivative\b|\bdifferenti(ate|ation)\b|\brate\s+of\s+change\b|"
+    r"\btangent\s+line\b|\bf'\(|\bdy/dx\b|\\frac\{d|\bchain\s+rule\b|"
+    r"\bproduct\s+rule\b|\bquotient\s+rule\b|"
+    r"\bintegral\b|\bintegrat(e|ion|ing)\b|\bantiderivative\b|"
+    r"\barea\s+under\b|\\int\b|\briemann\s+sum\b|"
+    r"\b(definite|indefinite)\s+integral\b|"
+    r"\blimit\b|\blim_\{|\\lim\b|\bapproaches\b|\bl'?hopital|"
+    r"\bindeterminate\b|"
+    r"\binfinite\s+sum\b|\bgeometric\s+series\b|\b(taylor|maclaurin|power)\s+series\b|"
+    r"\b(ratio|root|integral|comparison)\s+test\b|"
+    r"\b(convergent|divergent)\s+series\b",
+    re.IGNORECASE,
 )
 
-# Logic / proof
-_LOGIC_KW = (
-    "prove",
-    "disprove",
-    "show that",
-    "true or false",
-    "if and only if",
-    "iff",
-    "implies",
-    "contrapositive",
-    "converse",
-    "let ",
-    "biconditional",
-    "negation",
+# Probability + combinatorics merged
+_PROB_COMBI_RE = re.compile(
+    r"\bprobabil|\bP\s*\(|\bexpected\s+value\b|\bbayes|"
+    r"\bbinomial\s+(distribution|coefficient|probability)\b|\bpoisson\b|"
+    r"\b(geometric|uniform|normal|exponential)\s+distribution\b|"
+    r"\brandom\s+variable\b|\bstochastic\b|\bmarkov\b|"
+    r"\b(conditional|joint|marginal)\s+probabil|"
+    r"\bindependent\s+events\b|\bmutually\s+exclusive\b|"
+    r"\bpermutation(s)?\b|\bcombination(s)?\b|\bn\s+choose\s+k\b|"
+    r"\bfactorial\b|\bnumber\s+of\s+ways\b|\bhow\s+many\s+ways\b|"
+    r"\barrangement(s)?\b",
+    re.IGNORECASE,
 )
 
-# Trig — biggest single bucket
-_TRIG_KW = (
-    "sin(",
-    "cos(",
-    "tan(",
-    "sec(",
-    "csc(",
-    "cot(",
-    "\\sin",
-    "\\cos",
-    "\\tan",
-    "\\sec",
-    "\\csc",
-    "\\cot",
-    "trigonometric",
-    "trigonometry",
-    "radian",
-    "amplitude",
-    "period of",
-    "phase shift",
-    "law of sines",
-    "law of cosines",
+# Geometry — high-precision keywords
+_GEOM_RE = re.compile(
+    r"\btriangle(s)?\b|\bcircle(s)?\b|\brectangle(s)?\b|\bsquare(s)?\b|"
+    r"\bpolygon(s)?\b|\b(hexagon|pentagon|octagon)\b|"
+    r"\bperimeter\b|\barea\s+of\b|\bvolume\s+of\b|\bcircumference\b|"
+    r"\bdiameter\b|\bradius\b|"
+    r"\bangle(s)?\b|\b(parallel|perpendicular)\b|"
+    r"\bpythagorean\b|\bhypotenuse\b|"
+    r"\bvertic(es|al)\b|\baltitude\b|\bcentroid\b|"
+    r"\b(sphere|cylinder|cone|cube)\b",
+    re.IGNORECASE,
 )
-# Stricter: word-boundary trig functions (avoid "since" / "consider" /
-# "construct" / "increase" false positives but catch "sin x", "cos θ").
+
+# Trig — must use word boundary to avoid 'since'/'consist' false positives
 _TRIG_RE = re.compile(
-    r"\b(sin|cos|tan|sec|csc|cot|sine|cosine|tangent|cotangent|secant|cosecant)\b",
+    r"\\sin\b|\\cos\b|\\tan\b|\\sec\b|\\csc\b|\\cot\b|"
+    r"\b(sin|cos|tan|sec|csc|cot)\s*\(|"
+    r"\b(sin|cos|tan)\s*[xyzθαβ\\]|"
+    r"\b(sine|cosine|tangent|secant|cosecant|cotangent)\b|"
+    r"\btrigonom|\bradian(s)?\b|\bunit\s+circle\b|"
+    r"\blaw\s+of\s+(sines|cosines|tangents)\b",
+    re.IGNORECASE,
+)
+
+# Discrete math: num theory + sequences (small topics merged)
+_DISCRETE_RE = re.compile(
+    r"\bprime\s+(number|factor|factorization)\b|\bprime\b|"
+    r"\bdivisib(le|ility)\b|\bmodulo\b|\bmod\s+\d|\bremainder\b|"
+    r"\bgcd\b|\blcm\b|\bcongruent\s+modulo\b|\bdiophantine\b|"
+    r"\bperfect\s+square\b|\bconsecutive\s+integer|"
+    r"\b(arithmetic|geometric)\s+sequence\b|"
+    r"\bcommon\s+(ratio|difference)\b|"
+    r"\brecurrence\b|\bfibonacci\b|"
+    r"\bnth\s+term\b|\b(a_n|a_\{n\})|\brecursive\s+formula\b",
     re.IGNORECASE,
 )
 
 
+# ─── Detection (priority-routed, mutually exclusive) ───────────────────
+
+
 def detect_topic(question: str) -> str:
-    """Route a free-form question to one of 8 buckets (priority order).
+    """Return the Run J branch name for a free-form question.
 
-    MCQ questions should be routed elsewhere — this function assumes
-    free-form context. For MCQ, use the MCQ system prompt unchanged.
+    Priority order matters: most-specific stats first, then calculus
+    (its keywords are unambiguous), then prob/combi (specific math
+    objects), then geometry / trig, then discrete (catch-all for
+    number / sequence questions), then generic.
 
-    Returns one of: trig / geometry / logic_proof / stats_hyp_test /
-    stats_regression / probability / num_theory / generic.
+    Returns one of: stats_hyp_test, stats_regression, stats_descriptive,
+    calculus, prob_combi, geometry, trig, discrete_math, generic.
     """
-    q = question.lower()
+    q = question  # patterns are IGNORECASE
 
-    # Most specific stats branches first
-    if any(kw in q for kw in _STATS_HYP_KW):
+    if _STATS_HYP_RE.search(q):
         return "stats_hyp_test"
-    if any(kw in q for kw in _STATS_REG_KW):
+    if _STATS_REG_RE.search(q):
         return "stats_regression"
-    if any(kw in q for kw in _PROB_KW):
-        return "probability"
-    if any(kw in q for kw in _GEOM_KW):
+    if _STATS_DESC_RE.search(q):
+        return "stats_descriptive"
+    if _CALC_RE.search(q):
+        return "calculus"
+    if _PROB_COMBI_RE.search(q):
+        return "prob_combi"
+    if _GEOM_RE.search(q):
         return "geometry"
-    if any(kw in q for kw in _NUM_KW):
-        return "num_theory"
-    if any(kw in q for kw in _LOGIC_KW):
-        return "logic_proof"
-    # Trig last among Tier-1 because its keywords (sin/cos) can
-    # appear in stats / geometry questions; we don't want to route
-    # a stats t-test question to trig just because someone mentions
-    # cosine in a sample calc.
-    if any(kw in q for kw in _TRIG_KW) or _TRIG_RE.search(q):
+    if _TRIG_RE.search(q):
         return "trig"
-
+    if _DISCRETE_RE.search(q):
+        return "discrete_math"
     return "generic"
 
 
-__all__ = ["detect_topic"]
+# Helper for downstream stats / debugging
+ALL_BRANCHES = (
+    "stats_hyp_test",
+    "stats_regression",
+    "stats_descriptive",
+    "calculus",
+    "prob_combi",
+    "geometry",
+    "trig",
+    "discrete_math",
+    "generic",
+)
+
+
+__all__ = ["detect_topic", "ALL_BRANCHES"]
