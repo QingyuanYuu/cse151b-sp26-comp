@@ -101,8 +101,24 @@ def _select_prompt_builder(name: str):
         import cse151b_comp.prompts as _p
 
         return getattr(_p, f"build_prompt_{name}")
+    # Run J = data-driven topic routing (see src/cse151b_comp/runj.py).
+    # Sub-variants for ablation: runj_trig / runj_geom / runj_logic /
+    # runj_stats / runj_prob / runj_num. Each enables one branch, others
+    # fall through to Run F generic. runj is the full 7-branch design.
+    if name.startswith("runj"):
+        import cse151b_comp.runj as _rj
+
+        attr = "build_prompt_" + name  # build_prompt_runj or _runj_trig etc.
+        if hasattr(_rj, attr):
+            return getattr(_rj, attr)
+        raise ValueError(
+            f"Unknown Run J variant {name!r}. Available: runj, runj_trig, "
+            f"runj_geom, runj_logic, runj_stats, runj_prob, runj_num"
+        )
     raise ValueError(
-        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung, runh, runi"
+        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, "
+        f"rune, runf, rung, runh, runi, runj, runj_trig, runj_geom, runj_logic, "
+        f"runj_stats, runj_prob, runj_num"
     )
 
 
@@ -176,7 +192,25 @@ def main() -> None:
     p.add_argument(
         "--prompt",
         default="phase0",
-        choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf", "rung", "runh", "runi"],
+        choices=[
+            "phase0",
+            "current",
+            "runb",
+            "runc",
+            "rund",
+            "rune",
+            "runf",
+            "rung",
+            "runh",
+            "runi",
+            "runj",
+            "runj_trig",
+            "runj_geom",
+            "runj_logic",
+            "runj_stats",
+            "runj_prob",
+            "runj_num",
+        ],
         help="Which prompt set to use. phase0 = starter (proven 0.575 leaderboard); "
         "current = v6 per-type routing; runb/c/d/e are jason/dev's incremental "
         "improvements (Run B = leaderboard 0.60). Run E is the aggressive "
@@ -307,7 +341,8 @@ def main() -> None:
         # Run F-final and Run G — both designed against v2. Other prompts use
         # v1 (floor 12k, MCQ cap 18k, multi cap 22k). Mirrors jason/dev's
         # `auto_v2_prompts` list in inference.py (commit ee43f97).
-        if args.prompt in ("rung", "runf", "runi"):
+        # Run F final, Run G, Run I, and Run J family all use v2 budget.
+        if args.prompt in ("rung", "runf", "runi") or args.prompt.startswith("runj"):
             from cse151b_comp.budget import allocate_max_tokens_v2 as _allocator
 
             budget_label = "v2"
