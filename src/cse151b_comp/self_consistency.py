@@ -232,6 +232,7 @@ def main() -> None:
             "runj_prob",
             "runj_number_alg",
             "runj_v2",
+            "runj_v2_final",
             "runj_v2_olympiad",
             "runj_v2_trig",
             "runj_v2_geom",
