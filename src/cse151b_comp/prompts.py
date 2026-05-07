@@ -700,6 +700,259 @@ def build_prompt_runh(question: str, options: list[str] | None) -> tuple[str, st
     return RUNH_SYSTEM_PROMPT_FREE, question
 
 
+# ─── Run I: topic-routed free-form, building on Run F final ───────────────
+#
+# Run F final scored 0.632 on private (vs Run B 0.600, K=8 SC + Phase 0
+# 0.611). The +3.2 pp gain over Run B from prompt + v2 budget proves
+# prompt engineering is FAR from saturated — directly contradicting the
+# earlier "diminishing returns" framing.
+#
+# Run I escalates: 5-way topic routing on free-form (MCQ unchanged
+# from Run F final, since MCQ already at 96.3 % box rate).
+#
+# Lessons from Run E (which crashed val to 56.89%):
+#   1. Run E used append style (base prompt + topic tip suffix). Run I
+#      uses REPLACE style — each topic gets its own complete prompt.
+#   2. Run E added 5-shot + topic tip + 'be concise' simultaneously.
+#      Run I changes only the topic axis; each branch keeps F final's
+#      anti-pattern core unchanged.
+#   3. Run E used liberal keyword matching. Run I uses STRICT keywords
+#      (high precision, low recall) — when ambiguous, fall through to
+#      generic.
+#
+# Five branches:
+#   - GENERIC (default): Run F final's prompt verbatim
+#   - STATISTICS: hypothesis-test, regression, ANOVA examples
+#   - CALCULUS: integral / derivative example, symbolic emphasis
+#   - LINALG: matrix / eigenvalue example, ordered-tuple emphasis
+#   - PROBABILITY: exact-fraction emphasis, expected-value example
+#
+# Routing priority (most specific first):
+#   stats → linalg → calc → prob → generic
+
+# ─── Topic detection (strict keywords) ────────────────────────────────────
+
+_RUNI_STATS_KW = (
+    # Hypothesis testing
+    "null hypothesis",
+    "alternative hypothesis",
+    "p-value",
+    "p value",
+    "reject h0",
+    "reject the null",
+    "fail to reject",
+    "test the claim",
+    "significance level",
+    "test statistic",
+    # ANOVA / regression
+    "anova",
+    "regression",
+    "least squares",
+    "slope and intercept",
+    "f-test",
+    "f test",
+    "t-test",
+    "t test",
+    "chi-square",
+    "ss_total",
+    "ss_residual",
+    "treatment effect",
+    "main effect",
+    "experiment is conducted",
+    "experiment was conducted",
+    # Estimators / parameters
+    "sample mean",
+    "sample variance",
+    "sample standard deviation",
+    "population mean",
+    "population variance",
+    "standard error",
+    "confidence interval",
+    "margin of error",
+    "r^2",
+    "r-squared",
+    "coefficient of determination",
+    # Misc statistical
+    "compare the means",
+    "compare the mean",
+    "estimate the percentage",
+    "estimate the proportion",
+)
+_RUNI_CALC_KW = (
+    "derivative",
+    "differentiate",
+    "integral",
+    "integrate",
+    "antiderivative",
+    "limit of",
+    "lim_{",
+    "lim(",
+    "\\int",
+    "\\frac{d}",
+    "find dy/dx",
+    "rate of change",
+    "tangent line",
+    "concav",
+    "inflection",
+)
+_RUNI_LINALG_KW = (
+    "matrix",
+    "matrices",
+    "eigenvalue",
+    "eigenvector",
+    "determinant",
+    "row reduc",
+    "rank ",
+    "null space",
+    "column space",
+    "linearly independ",
+    "linear transformation",
+    "\\begin{pmatrix}",
+    "\\begin{bmatrix}",
+)
+_RUNI_PROB_KW = (
+    "probability",
+    "probabilities",
+    "p(",
+    "expected value",
+    "bernoulli",
+    "binomial distribution",
+    "poisson",
+    "uniformly at random",
+    "random variable",
+    "bayes",
+)
+
+
+def _detect_runi_topic(question: str) -> str:
+    """Return one of: 'stats', 'calc', 'linalg', 'prob', 'generic'.
+
+    Priority order (most-specific keywords first). False positives go
+    to 'generic'.
+    """
+    q = question.lower()
+    if any(kw in q for kw in _RUNI_STATS_KW):
+        return "stats"
+    if any(kw in q for kw in _RUNI_LINALG_KW):
+        return "linalg"
+    if any(kw in q for kw in _RUNI_CALC_KW):
+        return "calc"
+    if any(kw in q for kw in _RUNI_PROB_KW):
+        return "prob"
+    return "generic"
+
+
+# ─── Five free-form prompt branches ───────────────────────────────────────
+# Common scaffold: Phase 0 base + Run B anti-pattern + end-with-box +
+# topic-specific guidance + 1-2 worked example per branch.
+
+RUNI_SYSTEM_PROMPT_MCQ = RUNF_SYSTEM_PROMPT_MCQ  # MCQ already at 96.3% box, no change
+
+RUNI_SYSTEM_PROMPT_FREE_GENERIC = RUNF_SYSTEM_PROMPT_FREE  # Run F final default
+
+RUNI_SYSTEM_PROMPT_FREE_STATS = (
+    "You are an expert statistician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "Statistics-specific guidance:\n"
+    "- For hypothesis-test conclusions, use the question's own option "
+    'text (e.g., "reject" or "fail to reject"), NOT yes/no/true/false.\n'
+    "- Keep p-values, F-stats, t-stats, R^2 as exact fractions or "
+    "high-precision decimals (do not pre-round).\n"
+    "- For regression coefficients, report exact values from the "
+    "least-squares formula.\n\n"
+    "Examples:\n"
+    "Q: Test H0: μ=10 vs Ha: μ≠10. t-stat=2.45, critical 1.96. "
+    "(a) Reject H0? (b) Report t-stat.\n"
+    "A: 2.45 > 1.96, so reject. (a) reject. (b) 2.45. "
+    "\\boxed{reject, 2.45}\n\n"
+    "Q: A regression yields SS_total=100, SS_residual=20. Compute R^2.\n"
+    "A: R^2 = 1 - SS_res/SS_tot = 1 - 20/100 = 0.8. \\boxed{0.8}"
+)
+
+RUNI_SYSTEM_PROMPT_FREE_CALCULUS = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "Calculus-specific guidance:\n"
+    "- Keep derivatives and integrals in exact symbolic form (e.g., "
+    "\\boxed{2x + 3}, \\boxed{\\frac{x^3}{3} + C}).\n"
+    "- For limits, evaluate to the exact value or symbolic form, do "
+    "NOT round.\n"
+    "- Use \\frac for fractions, \\sqrt for roots, \\pi for π.\n\n"
+    "Examples:\n"
+    "Q: Differentiate f(x) = x^3 + 2x.\n"
+    "A: f'(x) = 3x^2 + 2. \\boxed{3x^2 + 2}\n\n"
+    "Q: Compute \\int 2x \\, dx.\n"
+    "A: \\int 2x \\, dx = x^2 + C. \\boxed{x^2 + C}"
+)
+
+RUNI_SYSTEM_PROMPT_FREE_LINALG = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "Linear algebra guidance:\n"
+    "- For eigenvalues, list as comma-separated values: \\boxed{1, 2, 3}.\n"
+    "- For matrix answers, use \\begin{pmatrix} ... \\end{pmatrix} "
+    "inside one \\boxed{}.\n"
+    "- For determinants, output the exact numeric or symbolic value.\n\n"
+    "Examples:\n"
+    "Q: Find the determinant of [[2,1],[3,4]].\n"
+    "A: det = 2*4 - 1*3 = 5. \\boxed{5}\n\n"
+    "Q: Find eigenvalues of [[2,0],[0,3]].\n"
+    "A: Diagonal entries are eigenvalues. \\boxed{2, 3}"
+)
+
+RUNI_SYSTEM_PROMPT_FREE_PROB = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "Probability guidance:\n"
+    "- Express probabilities as exact fractions like \\boxed{1/4} or "
+    "\\boxed{\\frac{1}{4}}, NOT rounded decimals (unless the question "
+    "asks for a decimal).\n"
+    "- Expected values: keep as exact fractions or symbolic.\n"
+    "- Conditional probabilities P(A|B): use Bayes' theorem with exact "
+    "values.\n\n"
+    "Examples:\n"
+    "Q: A fair die is rolled. What is P(rolling a 4)?\n"
+    "A: There are 6 equally likely outcomes. P = 1/6. \\boxed{1/6}\n\n"
+    "Q: Compute the expected value of a fair 6-sided die roll.\n"
+    "A: E[X] = (1+2+3+4+5+6)/6 = 21/6 = 7/2. \\boxed{7/2}"
+)
+
+
+def build_prompt_runi(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run I prompt builder: 5-way topic-routed free-form on top of Run F final."""
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNI_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+
+    topic = _detect_runi_topic(question)
+    if topic == "stats":
+        return RUNI_SYSTEM_PROMPT_FREE_STATS, question
+    if topic == "calc":
+        return RUNI_SYSTEM_PROMPT_FREE_CALCULUS, question
+    if topic == "linalg":
+        return RUNI_SYSTEM_PROMPT_FREE_LINALG, question
+    if topic == "prob":
+        return RUNI_SYSTEM_PROMPT_FREE_PROB, question
+    return RUNI_SYSTEM_PROMPT_FREE_GENERIC, question
+
+
 # ─── Build prompt ─────────────────────────────────────────────────────────
 
 
