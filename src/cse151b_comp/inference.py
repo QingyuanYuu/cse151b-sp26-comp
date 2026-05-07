@@ -37,6 +37,7 @@ from cse151b_comp.prompts import (
     build_prompt_runf,
     build_prompt_rung,
     build_prompt_runh,
+    build_prompt_runi,
 )
 
 
@@ -107,8 +108,10 @@ def _select_prompt_builder(name: str):
         return build_prompt_rung
     if name == "runh":
         return build_prompt_runh
+    if name == "runi":
+        return build_prompt_runi
     raise ValueError(
-        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung, runh"
+        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung, runh, runi"
     )
 
 
@@ -129,7 +132,7 @@ def main() -> None:
     p.add_argument("--no-judge", action="store_true",
                    help="Skip judger scoring (use for private-set runs).")
     p.add_argument("--prompt", default="current",
-                   choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf", "rung", "runh"],
+                   choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf", "rung", "runh", "runi"],
                    help="Which prompt set to use. phase0 = starter (v5_sanity 0.583), "
                         "current = v6 per-type (0.448, retired), "
                         "runb = Phase 0 + anti-pattern + symbolic preference (0.600), "
@@ -138,7 +141,8 @@ def main() -> None:
                         "rune = Run D + topic routing + 5-shot (val 56.89pct, retired), "
                         "runf = Run F final: Run D core - bool/Tuesday + sqrt75 + MCQ elim + v2 budget (auto), "
                         "rung = Run F prompt + v2 budget (16k floor, 20k MCQ / 24k multi cap), "
-                        "runh = Run B + end-with-box (free) + MCQ 8+ option elim — final K=8 SC base.")
+                        "runh = Run B + end-with-box (free) + MCQ 8+ option elim — final K=8 SC base, "
+                        "runi = Run F final + 5-way topic routing (stats/calc/linalg/prob/generic), auto v2 budget.")
     p.add_argument("--per-type-budget", action="store_true",
                    help="Use cse151b_comp.budget.allocate_max_tokens per question instead "
                         "of the flat --max-tokens value. Overrides --max-tokens.")
@@ -178,7 +182,7 @@ def main() -> None:
     prompt_builder = _select_prompt_builder(args.prompt)
 
     # Run F (final) and Run G auto-enable v2 budget unless --budget-v1 escapes.
-    auto_v2_prompts = ("rung", "runf")
+    auto_v2_prompts = ("rung", "runf", "runi")
     use_v2 = (args.budget_v2 or args.prompt in auto_v2_prompts) and not args.budget_v1
     use_budget = args.per_type_budget or use_v2
 
