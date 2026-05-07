@@ -35,6 +35,7 @@ from cse151b_comp.prompts import (
     build_prompt_rund,
     build_prompt_rune,
     build_prompt_runf,
+    build_prompt_rung,
 )
 
 
@@ -102,8 +103,7 @@ def _select_prompt_builder(name: str):
     if name == "runf":
         return build_prompt_runf
     if name == "rung":
-        # Run G uses Run F's prompt verbatim; the difference is the v2 budget.
-        return build_prompt_runf
+        return build_prompt_rung
     raise ValueError(
         f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung"
     )

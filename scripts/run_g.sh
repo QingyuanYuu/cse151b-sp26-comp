@@ -68,8 +68,8 @@ else
         --out "$JSONL" \
         --prompt rung \
         --temperature 0.6 --top-p 0.95 --top-k 20 \
-        --max-model-len 26624 \
-        --max-num-seqs 8 \
+        --max-model-len 32768 \
+        --max-num-seqs 6 \
         --gpu-mem-util 0.70 \
         $LIMIT_FLAG \
         $JUDGE_FLAG

@@ -20,6 +20,8 @@ from cse151b_comp.prompts import (
     RUNE_SYSTEM_PROMPT_MCQ,
     RUNF_SYSTEM_PROMPT_FREE,
     RUNF_SYSTEM_PROMPT_MCQ,
+    RUNG_SYSTEM_PROMPT_FREE,
+    RUNG_SYSTEM_PROMPT_MCQ,
     SYSTEM_PROMPT_FREE_MULTI,
     SYSTEM_PROMPT_FREE_SINGLE,
     SYSTEM_PROMPT_MATH,
@@ -30,6 +32,7 @@ from cse151b_comp.prompts import (
     build_prompt_rund,
     build_prompt_rune,
     build_prompt_runf,
+    build_prompt_rung,
     detect_question_type,
 )
 
@@ -794,3 +797,72 @@ def test_runf_prompts_under_token_budget() -> None:
     # Hard caps: MCQ < 700 chars, free < 1100 chars.
     assert len(RUNF_SYSTEM_PROMPT_MCQ) < 700
     assert len(RUNF_SYSTEM_PROMPT_FREE) < 1100
+
+
+# ─── Run G prompt rules ────────────────────────────────────────────────────
+
+
+def test_rung_mcq_identical_to_runf() -> None:
+    # Run G keeps Run F's MCQ prompt verbatim — only free-form changes.
+    assert RUNG_SYSTEM_PROMPT_MCQ == RUNF_SYSTEM_PROMPT_MCQ
+
+
+def test_rung_inherits_runf_rules_and_examples() -> None:
+    # Run G keeps all of Run F's working rules and original 3 examples.
+    for fragment in (
+        "\\quad", "\\qquad", "Do NOT use multiple \\boxed{} blocks",
+        "irrational", "End your response",
+        "\\boxed{9\\pi}", "\\boxed{4, -7}", "\\boxed{5\\sqrt{3}}",
+    ):
+        assert fragment in RUNG_SYSTEM_PROMPT_FREE, f"missing: {fragment}"
+
+
+def test_rung_adds_mixed_multipart_example() -> None:
+    # Run G's new example: t-test with letter+numeric sub-answers.
+    # Targets Run C's id=30 failure mode (A/B → Yes/No replacement).
+    assert "Test H0" in RUNG_SYSTEM_PROMPT_FREE
+    assert "\\boxed{reject, 2.45}" in RUNG_SYSTEM_PROMPT_FREE
+    # Also check the Q→A frame structure.
+    assert "Reject H0?" in RUNG_SYSTEM_PROMPT_FREE
+
+
+def test_rung_does_not_have_yes_no_inline_rule() -> None:
+    # Same Run F guard: no "Yes/Tuesday/True" inline rule (Run C's bug).
+    free_lower = RUNG_SYSTEM_PROMPT_FREE.lower()
+    assert "yes / tuesday / true" not in free_lower
+    assert "natural form" not in free_lower
+    assert "boolean" not in free_lower
+
+
+def test_rung_does_not_have_anti_rounding_or_token_rescue() -> None:
+    for prompt in (RUNG_SYSTEM_PROMPT_MCQ, RUNG_SYSTEM_PROMPT_FREE):
+        assert "Do not round" not in prompt
+        assert "running out" not in prompt
+        assert "best-guess" not in prompt
+
+
+def test_rung_free_has_four_examples() -> None:
+    # Run G is Run F's 3 examples + 1 new mixed multi-part example.
+    qa_count = RUNG_SYSTEM_PROMPT_FREE.count("Q:")
+    assert qa_count == 4, f"Expected 4 Q→A examples, got {qa_count}"
+
+
+def test_rung_distinct_from_runf() -> None:
+    # MCQ identical, but free-form should differ (extra example).
+    assert RUNG_SYSTEM_PROMPT_FREE != RUNF_SYSTEM_PROMPT_FREE
+    assert len(RUNG_SYSTEM_PROMPT_FREE) > len(RUNF_SYSTEM_PROMPT_FREE)
+
+
+def test_build_prompt_rung_routes_correctly() -> None:
+    sys_p_mc, _ = build_prompt_rung("Q?", ["a", "b"])
+    assert sys_p_mc is RUNG_SYSTEM_PROMPT_MCQ
+    sys_p_free, _ = build_prompt_rung("Compute 1+1.", None)
+    assert sys_p_free is RUNG_SYSTEM_PROMPT_FREE
+
+
+def test_rung_free_prompt_under_safe_length() -> None:
+    # Run G adds ~150 chars over Run F (one extra worked example).
+    # No longer constrained by Phase 1's 349-token regression assumption
+    # (analysis showed length wasn't the dominant factor — specific bad
+    # rules were). Allow up to 1300 chars / ~325 tokens.
+    assert len(RUNG_SYSTEM_PROMPT_FREE) < 1300

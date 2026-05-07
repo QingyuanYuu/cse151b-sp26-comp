@@ -110,8 +110,11 @@ def _select_prompt_builder(name: str):
     if name == "runf":
         from cse151b_comp.prompts import build_prompt_runf
         return build_prompt_runf
+    if name == "rung":
+        from cse151b_comp.prompts import build_prompt_rung
+        return build_prompt_rung
     raise ValueError(
-        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf"
+        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung"
     )
 
 
@@ -180,14 +183,15 @@ def main() -> None:
     p.add_argument("--top-k", type=int, default=20)
     p.add_argument("--max-tokens", type=int, default=12288, dest="max_tokens")
     p.add_argument("--prompt", default="phase0",
-                   choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf"],
+                   choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf", "rung"],
                    help="Which prompt set to use. phase0 = starter (v5_sanity 0.583), "
                         "current = v6 per-type (0.448, retired), "
                         "runb = Phase 0 + anti-pattern + symbolic preference (0.600), "
                         "runc = Run B + end-with-box + text/bool examples, "
                         "rund = Run C + 1-3 few-shot worked examples (val 63.56pct), "
                         "rune = Run D + topic routing + 5-shot (val 56.89pct, retired), "
-                        "runf = Run D core - bool rule - Tuesday + sqrt75 + MCQ elim.")
+                        "runf = Run D core - bool rule - Tuesday + sqrt75 + MCQ elim, "
+                        "rung = Run F + mixed multi-part example + v2 budget.")
     p.add_argument("--per-type-budget", action="store_true",
                    help="Use cse151b_comp.budget.allocate_max_tokens per question instead "
                         "of the flat --max-tokens value. Overrides --max-tokens.")
