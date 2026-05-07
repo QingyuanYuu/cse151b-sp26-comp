@@ -490,6 +490,17 @@ def build_prompt_rune(question: str, options: list[str] | None) -> tuple[str, st
 # Run D footguns, add Run E's MCQ elimination clause, do NOT add
 # topic routing or 5-shot or "be concise". Target free <= 230 tokens.
 
+# NOTE: Run F is now a "config bundle" not just a prompt. The CLI auto-
+# enables v2 budget when --prompt runf is selected (floor 16k, MCQ cap
+# 22k, multi cap 30k). This is the "Run F final" config:
+#
+#     Run F (final) = Run F prompt + v2 budget
+#
+# Day1-distill-pool's Run F val 58.67% used v1 budget (12k floor); the
+# final config inherits the prompt but adds the v2 budget fix that
+# addresses Run C's free_single starvation. Use --budget-v1 to force
+# the older v1 budget for reproducing the day1 number.
+
 RUNF_SYSTEM_PROMPT_MCQ = (
     "You are an expert mathematician. Read the problem and the answer "
     "choices, then select the single best answer.\n\n"

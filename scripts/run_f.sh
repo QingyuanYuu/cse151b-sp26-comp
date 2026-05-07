@@ -60,16 +60,16 @@ echo
 if [ "$RESUME" = "1" ] && [ -f "$JSONL" ]; then
     echo "[$(date)] --resume + $JSONL exists; skipping inference."
 else
-    echo "[$(date)] Starting Run F inference..."
+    echo "[$(date)] Starting Run F (final) inference: prompt runf + v2 budget (auto)..."
     PYTHONPATH=src .venv/bin/python -m cse151b_comp.inference \
         --data "$INPUT" \
         --out "$JSONL" \
         --prompt runf \
-        --per-type-budget \
         --temperature 0.6 \
         --top-p 0.95 \
         --top-k 20 \
-        --max-model-len 24576 \
+        --max-model-len 32768 \
+        --max-num-seqs 6 \
         --gpu-mem-util 0.70 \
         $LIMIT_FLAG \
         $JUDGE_FLAG

@@ -136,16 +136,19 @@ def main() -> None:
                         "runc = Run B + end-with-box + text/bool examples, "
                         "rund = Run C + 1-3 few-shot worked examples (val 63.56pct), "
                         "rune = Run D + topic routing + 5-shot (val 56.89pct, retired), "
-                        "runf = Run D core - bool rule - Tuesday + sqrt75 + MCQ elim, "
+                        "runf = Run F final: Run D core - bool/Tuesday + sqrt75 + MCQ elim + v2 budget (auto), "
                         "rung = Run F prompt + v2 budget (16k floor, 20k MCQ / 24k multi cap), "
                         "runh = Run B + end-with-box (free) + MCQ 8+ option elim — final K=8 SC base.")
     p.add_argument("--per-type-budget", action="store_true",
                    help="Use cse151b_comp.budget.allocate_max_tokens per question instead "
                         "of the flat --max-tokens value. Overrides --max-tokens.")
     p.add_argument("--budget-v2", action="store_true",
-                   help="Use the v2 (aggressive) budget: floor 16k, MCQ cap 20k, multi cap 24k. "
-                        "Auto-enabled when --prompt rung is selected. "
-                        "Requires --max-model-len >= 26624.")
+                   help="Use the v2 (aggressive) budget: floor 16k, MCQ cap 22k, multi cap 30k. "
+                        "Auto-enabled when --prompt is rung or runf (final). "
+                        "Requires --max-model-len >= 32768 to fit 30k output.")
+    p.add_argument("--budget-v1", action="store_true",
+                   help="Force v1 budget (floor 12k, MCQ cap 18k, multi cap 22k) even when "
+                        "--prompt is runf or rung. Use only for backward-compat reproductions.")
     args = p.parse_args()
 
     _setup_env(args.gpu_id)
@@ -174,8 +177,9 @@ def main() -> None:
 
     prompt_builder = _select_prompt_builder(args.prompt)
 
-    # Run G ⇒ auto-enable v2 budget.
-    use_v2 = args.budget_v2 or args.prompt == "rung"
+    # Run F (final) and Run G auto-enable v2 budget unless --budget-v1 escapes.
+    auto_v2_prompts = ("rung", "runf")
+    use_v2 = (args.budget_v2 or args.prompt in auto_v2_prompts) and not args.budget_v1
     use_budget = args.per_type_budget or use_v2
 
     if use_budget:
