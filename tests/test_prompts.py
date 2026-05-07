@@ -22,6 +22,8 @@ from cse151b_comp.prompts import (
     RUNF_SYSTEM_PROMPT_MCQ,
     RUNG_SYSTEM_PROMPT_FREE,
     RUNG_SYSTEM_PROMPT_MCQ,
+    RUNH_SYSTEM_PROMPT_FREE,
+    RUNH_SYSTEM_PROMPT_MCQ,
     SYSTEM_PROMPT_FREE_MULTI,
     SYSTEM_PROMPT_FREE_SINGLE,
     SYSTEM_PROMPT_MATH,
@@ -33,6 +35,7 @@ from cse151b_comp.prompts import (
     build_prompt_rune,
     build_prompt_runf,
     build_prompt_rung,
+    build_prompt_runh,
     detect_question_type,
 )
 
@@ -866,3 +869,96 @@ def test_rung_free_prompt_under_safe_length() -> None:
     # (analysis showed length wasn't the dominant factor — specific bad
     # rules were). Allow up to 1300 chars / ~325 tokens.
     assert len(RUNG_SYSTEM_PROMPT_FREE) < 1300
+
+
+# ─── Run H prompt rules (final K=8 SC base) ────────────────────────────────
+
+
+def test_runh_inherits_runb_anti_pattern_rules() -> None:
+    # Run H is Run B + 2 cautious additions. All Run B anti-pattern rules
+    # must remain intact verbatim.
+    for fragment in (
+        # MCQ rules from Run B
+        "ONLY the letter", "\\boxed{(C)}", "\\boxed{C.}", "\\boxed{C)}",
+        "\\text{}", "\\textbf{}",
+        "Output exactly one \\boxed{...} at the end",
+    ):
+        assert fragment in RUNH_SYSTEM_PROMPT_MCQ, f"missing in MCQ: {fragment}"
+    for fragment in (
+        # Free rules from Run B
+        "\\quad", "\\qquad", "Do NOT use multiple \\boxed{} blocks",
+        "irrational",
+        "\\boxed{2\\pi}", "\\boxed{\\frac{1}{2}}",
+        "\\boxed{-\\frac{7\\sqrt{149}}{149}}",
+    ):
+        assert fragment in RUNH_SYSTEM_PROMPT_FREE, f"missing in free: {fragment}"
+
+
+def test_runh_mcq_adds_elimination_clause() -> None:
+    # The MCQ-only addition: 8+ option elimination strategy (validated
+    # in Run E/F/G as non-harmful).
+    assert "8+" in RUNH_SYSTEM_PROMPT_MCQ
+    assert "eliminate" in RUNH_SYSTEM_PROMPT_MCQ.lower()
+
+
+def test_runh_free_adds_explicit_end_with_box() -> None:
+    # The free-form-only addition: explicit "End your response with..."
+    # rephrasing of Run B's "Put your final answer in...".
+    assert "End your response" in RUNH_SYSTEM_PROMPT_FREE
+    # And the original B rule should be REMOVED (we changed it).
+    assert "Put your final answer in" not in RUNH_SYSTEM_PROMPT_FREE
+
+
+def test_runh_distinct_from_runb() -> None:
+    # The whole point: Run H must differ from Run B in exactly the
+    # two intended places (no other accidental drift).
+    assert RUNH_SYSTEM_PROMPT_MCQ != RUNB_SYSTEM_PROMPT_MCQ
+    assert RUNH_SYSTEM_PROMPT_FREE != RUNB_SYSTEM_PROMPT_FREE
+
+
+def test_runh_does_not_introduce_burnt_features() -> None:
+    # Run H must NOT carry any of the C/D/E/F/G regression-causing
+    # features. This is a guard against accidental cross-contamination.
+    for prompt in (RUNH_SYSTEM_PROMPT_MCQ, RUNH_SYSTEM_PROMPT_FREE):
+        # Run C bool inline rule
+        assert "Yes / Tuesday / True" not in prompt
+        assert "natural form" not in prompt.lower()
+        # Phase 1 anti-rounding / token-rescue
+        assert "Do not round" not in prompt
+        assert "running out" not in prompt
+        assert "best-guess" not in prompt
+        # Run E topic suffix / be concise
+        assert "Statistics tip" not in prompt
+        assert "Calculus tip" not in prompt
+        assert "Be concise" not in prompt
+    # No worked examples (all of C/D/E/F/G had them; we drop)
+    assert "Q:" not in RUNH_SYSTEM_PROMPT_MCQ
+    assert "Q:" not in RUNH_SYSTEM_PROMPT_FREE
+    assert "Examples (study the format)" not in RUNH_SYSTEM_PROMPT_FREE
+
+
+def test_runh_two_prompts_distinct() -> None:
+    assert RUNH_SYSTEM_PROMPT_MCQ != RUNH_SYSTEM_PROMPT_FREE
+
+
+def test_build_prompt_runh_routes_correctly() -> None:
+    sys_p_mc, _ = build_prompt_runh("Q?", ["a", "b"])
+    assert sys_p_mc is RUNH_SYSTEM_PROMPT_MCQ
+    sys_p_free, _ = build_prompt_runh("Compute 1+1.", None)
+    assert sys_p_free is RUNH_SYSTEM_PROMPT_FREE
+
+
+def test_runh_mcq_user_includes_labels() -> None:
+    _, user = build_prompt_runh("What is 2+2?", ["3", "4", "5"])
+    assert "A. 3" in user
+    assert "B. 4" in user
+    assert "C. 5" in user
+
+
+def test_runh_prompts_under_token_budget() -> None:
+    # Run H is the leanest of the post-B family. MCQ ~116t / 464 chars
+    # (Run B 87t + 30t for elim clause). Free ~143t / 573 chars
+    # (Run B 137t + 6t for end-with-box rephrase).
+    # Hard caps: MCQ < 600 chars, free < 700 chars.
+    assert len(RUNH_SYSTEM_PROMPT_MCQ) < 600
+    assert len(RUNH_SYSTEM_PROMPT_FREE) < 700

@@ -36,6 +36,7 @@ from cse151b_comp.prompts import (
     build_prompt_rune,
     build_prompt_runf,
     build_prompt_rung,
+    build_prompt_runh,
 )
 
 
@@ -104,8 +105,10 @@ def _select_prompt_builder(name: str):
         return build_prompt_runf
     if name == "rung":
         return build_prompt_rung
+    if name == "runh":
+        return build_prompt_runh
     raise ValueError(
-        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung"
+        f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung, runh"
     )
 
 
@@ -126,7 +129,7 @@ def main() -> None:
     p.add_argument("--no-judge", action="store_true",
                    help="Skip judger scoring (use for private-set runs).")
     p.add_argument("--prompt", default="current",
-                   choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf", "rung"],
+                   choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf", "rung", "runh"],
                    help="Which prompt set to use. phase0 = starter (v5_sanity 0.583), "
                         "current = v6 per-type (0.448, retired), "
                         "runb = Phase 0 + anti-pattern + symbolic preference (0.600), "
@@ -134,7 +137,8 @@ def main() -> None:
                         "rund = Run C + 1-3 few-shot worked examples (val 63.56pct), "
                         "rune = Run D + topic routing + 5-shot (val 56.89pct, retired), "
                         "runf = Run D core - bool rule - Tuesday + sqrt75 + MCQ elim, "
-                        "rung = Run F prompt + v2 budget (16k floor, 20k MCQ / 24k multi cap).")
+                        "rung = Run F prompt + v2 budget (16k floor, 20k MCQ / 24k multi cap), "
+                        "runh = Run B + end-with-box (free) + MCQ 8+ option elim — final K=8 SC base.")
     p.add_argument("--per-type-budget", action="store_true",
                    help="Use cse151b_comp.budget.allocate_max_tokens per question instead "
                         "of the flat --max-tokens value. Overrides --max-tokens.")
