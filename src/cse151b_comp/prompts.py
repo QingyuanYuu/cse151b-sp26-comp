@@ -561,6 +561,62 @@ def build_prompt_runf(question: str, options: list[str] | None) -> tuple[str, st
     return RUNF_SYSTEM_PROMPT_FREE, question
 
 
+# ─── Run G: Run F + mixed multi-part example + v2 budget ──────────────────
+#
+# Once the "long prompt causes drift" assumption is relaxed (B/C analysis
+# attributed Run C's regression mostly to specific bad rules — Yes/Tuesday/
+# True inline + 12k free_single budget — not raw token count), Run G adds
+# one more worked example targeting Run C's id=30 failure mode:
+#
+# - Multi-part questions whose sub-answers include letters or words like
+#   "reject"/"accept" (statistics test conclusions). Run C's inline rule
+#   "use natural form: Yes / Tuesday / True" caused these to be answered
+#   as Yes/No instead of the question's own option text.
+#
+# Solution: a Q→A example showing a t-test multi-part with mixed letter +
+# numeric sub-answer, output as ``\boxed{reject, 2.45}``. Demonstrates:
+# (1) using the question's own language (reject) for letter-style sub-
+# answers, (2) mixed types in single comma-separated boxed.
+#
+# MCQ prompt is identical to Run F. Free-form gains ~150 chars (~37
+# tokens) from the new example. Budget bumped to v2's higher tier
+# (MCQ 22k cap, multi 30k cap) to maximize headroom for hard problems.
+
+RUNG_SYSTEM_PROMPT_MCQ = RUNF_SYSTEM_PROMPT_MCQ  # No change for MCQ.
+
+RUNG_SYSTEM_PROMPT_FREE = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "If the exact answer is irrational (involves \\sqrt, \\pi, e^x, \\ln, "
+    "or unsimplified fractions), keep it symbolic — do not convert to "
+    "decimal unless the question asks for one.\n\n"
+    "Examples (study the format):\n\n"
+    "Q: Compute the area of a circle with radius 3.\n"
+    "A: A = \\pi r^2 = 9\\pi. \\boxed{9\\pi}\n\n"
+    "Q: For y = 4x - 7, find the slope and y-intercept.\n"
+    "A: Slope-intercept form. slope=4, intercept=-7. \\boxed{4, -7}\n\n"
+    "Q: Simplify \\sqrt{75}.\n"
+    "A: 75 = 25 \\times 3, so \\sqrt{75} = 5\\sqrt{3}. \\boxed{5\\sqrt{3}}\n\n"
+    "Q: Test H0: μ=10 vs Ha: μ≠10. t-stat=2.45, critical value 1.96. "
+    "(a) Reject H0? (b) Report the t-stat.\n"
+    "A: 2.45 > 1.96, so reject. (a) reject. (b) 2.45. "
+    "\\boxed{reject, 2.45}"
+)
+
+
+def build_prompt_rung(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run G prompt builder: Run F + mixed multi-part example for sub-letter answers."""
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNG_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    return RUNG_SYSTEM_PROMPT_FREE, question
+
+
 # ─── Build prompt ─────────────────────────────────────────────────────────
 
 

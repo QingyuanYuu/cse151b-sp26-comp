@@ -96,11 +96,11 @@ def _select_prompt_builder(name: str):
         return build_prompt
     # Run B/C/D/E variants live in prompts.py and are self-contained — each
     # is a (question, options) -> (system, user) function with no extra state.
-    if name in ("runb", "runc", "rund", "rune", "runf"):
+    if name in ("runb", "runc", "rund", "rune", "runf", "rung"):
         import cse151b_comp.prompts as _p
 
         return getattr(_p, f"build_prompt_{name}")
-    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune")
+    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung")
 
 
 # ─── Question type ─────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@ def main() -> None:
     p.add_argument(
         "--prompt",
         default="phase0",
-        choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf"],
+        choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf", "rung"],
         help="Which prompt set to use. phase0 = starter (proven 0.575 leaderboard); "
         "current = v6 per-type routing; runb/c/d/e are jason/dev's incremental "
         "improvements (Run B = leaderboard 0.60). Run E is the aggressive "
@@ -287,22 +287,30 @@ def main() -> None:
     # accepts a list whose length matches prompts, applying each per-prompt.
     per_prompt_sp: list[SamplingParams] | None = None
     if args.allocate_tokens:
-        from cse151b_comp.budget import allocate_max_tokens
+        # Run G uses v2 budget (floor 16k, MCQ cap 22k, multi cap 30k).
+        # All other prompts use v1 (floor 12k, MCQ cap 18k, multi cap 22k).
+        # Both signatures are (question, options) -> int — no kwargs.
+        if args.prompt == "rung":
+            from cse151b_comp.budget import allocate_max_tokens_v2 as _allocator
+
+            budget_label = "v2"
+        else:
+            from cse151b_comp.budget import allocate_max_tokens as _allocator
+
+            budget_label = "v1"
 
         per_prompt_sp = []
         budget_hist: dict[int, int] = {}
         for item in rows:
-            mt = allocate_max_tokens(
-                item.get("question", ""),
-                item.get("options"),
-                ceiling=args.max_tokens_ceiling,
-                floor=args.max_tokens_floor,
-            )
+            mt = _allocator(item.get("question", ""), item.get("options"))
             per_prompt_sp.append(_build_sp(mt))
             budget_hist[mt] = budget_hist.get(mt, 0) + 1
         # Show the budget distribution so we can spot-check calibration.
         hist_str = ", ".join(f"{k}:{v}" for k, v in sorted(budget_hist.items()))
-        print(f"[sc] Per-question max_tokens histogram: {hist_str}")
+        print(f"[sc] Per-question max_tokens histogram ({budget_label}): {hist_str}")
+        # Note: --max-tokens-floor / --max-tokens-ceiling CLI args are kept
+        # for backward compat but ignored; the budget module now hardcodes
+        # the floor/ceiling per version (v1 vs v2) for reproducibility.
 
     build_prompt = _select_prompt_builder(args.prompt)
     prompts = []

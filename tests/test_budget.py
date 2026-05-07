@@ -1,124 +1,118 @@
-"""Tests for budget.allocate_max_tokens.
-
-Calibration sanity checks against the floor/ceiling rules in
-:mod:`cse151b_comp.budget`'s docstring.
-"""
+"""Tests for cse151b_comp.budget.allocate_max_tokens."""
 
 from __future__ import annotations
 
-from cse151b_comp.budget import allocate_max_tokens, count_parts
+from cse151b_comp.budget import _CEILING, _FLOOR, allocate_max_tokens
 
-# ─── count_parts ───────────────────────────────────────────────────────────
-
-
-def test_count_parts_via_ANS_placeholders():
-    q = "Find x = [ANS] and y = [ANS]."
-    assert count_parts(q) == 2
+# ─── MCQ scaling ────────────────────────────────────────────────────────────
 
 
-def test_count_parts_via_part_letters():
-    q = "(a) Find x. (b) Find y. (c) Find z."
-    assert count_parts(q) == 3
+def test_mcq_4_options_clamped_to_floor() -> None:
+    # 8000 + 4*1000 = 12000 — at floor.
+    assert allocate_max_tokens("Q?", ["a", "b", "c", "d"]) == _FLOOR
 
 
-def test_count_parts_takes_max_of_signals():
-    # Both signals agree at 2.
-    q = "[ANS] [ANS] (a) (b)"
-    assert count_parts(q) == 2
+def test_mcq_5_options_above_floor() -> None:
+    # 8000 + 5*1000 = 13000.
+    assert allocate_max_tokens("Q?", ["a", "b", "c", "d", "e"]) == 13000
 
 
-def test_count_parts_returns_at_least_one():
-    assert count_parts("Compute the integral.") == 1
-    assert count_parts("") == 1
+def test_mcq_2_options_clamped_to_floor() -> None:
+    # 8000 + 2*1000 = 10000 — below floor, clamps to 12000.
+    assert allocate_max_tokens("Q?", ["a", "b"]) == _FLOOR
 
 
-def test_count_parts_ignores_repeated_same_letter():
-    # 5 (a)s are still one distinct part marker.
-    q = "consider (a + b)^2 where (a) is large"
-    # \(a\) appears via part-letter regex once; result is max(0_ANS, 1_letter, 1) = 1
-    assert count_parts(q) == 1
+def test_mcq_8_options() -> None:
+    # 8000 + 8*1000 = 16000.
+    assert allocate_max_tokens("Q?", [str(i) for i in range(8)]) == 16000
 
 
-# ─── allocate_max_tokens — MCQ ────────────────────────────────────────────
+def test_mcq_10_options_caps_at_18k() -> None:
+    # 8000 + 10*1000 = 18000 — at the new MCQ ceiling (was 16k in Run B).
+    # 10-opt is 89% of private MCQ (267/300) and Run B's worst no-box bucket.
+    assert allocate_max_tokens("Q?", [str(i) for i in range(10)]) == 18000
 
 
-def test_mcq_4_options_clamps_to_floor():
-    # 8000 + 4*800 = 11.2k < 12288 floor → clamped up.
-    assert allocate_max_tokens("Pick one.", options=["A", "B", "C", "D"]) == 12288
+def test_mcq_15_options_still_caps_at_18k() -> None:
+    assert allocate_max_tokens("Q?", [str(i) for i in range(15)]) == 18000
 
 
-def test_mcq_5_options_clamps_to_floor():
-    # 8000 + 5*800 = 12k < 12288 floor.
-    assert allocate_max_tokens("Pick one.", options=list("ABCDE")) == 12288
+# ─── Multi-part scaling ─────────────────────────────────────────────────────
 
 
-def test_mcq_10_options_above_floor():
-    # 8000 + 10*800 = 16000.
-    assert allocate_max_tokens("Pick one.", options=list("ABCDEFGHIJ")) == 16000
+def test_multi_part_two_letter_markers_clamped_to_floor() -> None:
+    # 6000 + 2*2200 = 10400 — below floor (12000), clamps up.
+    q = "(a) compute X. (b) compute Y."
+    assert allocate_max_tokens(q, None) == _FLOOR
 
 
-def test_mcq_15_options_clamps_to_ceiling():
-    # 8000 + 15*800 = 20k. Just below ceiling 20480.
-    assert allocate_max_tokens("Pick one.", options=list("A" * 15)) == 20000
+def test_multi_part_three_letter_markers_above_floor() -> None:
+    # 6000 + 3*2200 = 12600 — above floor.
+    q = "(a) X (b) Y (c) Z"
+    assert allocate_max_tokens(q, None) == 12600
 
 
-def test_mcq_huge_options_clamps_to_ceiling():
-    # 8000 + 30*800 = 32000 → ceiling.
-    assert allocate_max_tokens("Pick one.", options=["X"] * 30) == 20480
-
-
-# ─── allocate_max_tokens — free-form multi ────────────────────────────────
-
-
-def test_multi_2parts_clamps_to_floor():
-    # 6000 + 2*2200 = 10400 < 12288 floor.
-    q = "(a) Find x. (b) Find y."
-    assert allocate_max_tokens(q, options=None) == 12288
-
-
-def test_multi_3parts_above_floor():
-    # 6000 + 3*2200 = 12600.
-    q = "(a) (b) (c)"
-    assert allocate_max_tokens(q, options=None) == 12600
-
-
-def test_multi_5parts_above_floor():
+def test_multi_part_five_letter_markers() -> None:
     # 6000 + 5*2200 = 17000.
-    q = "[ANS] [ANS] [ANS] [ANS] [ANS]"
-    assert allocate_max_tokens(q, options=None) == 17000
+    q = "(a) X (b) Y (c) Z (d) W (e) V"
+    assert allocate_max_tokens(q, None) == 17000
 
 
-def test_multi_8parts_clamps_to_ceiling():
-    # 6000 + 8*2200 = 23600 > 20480 ceiling.
-    q = "[ANS]" * 8
-    assert allocate_max_tokens(q, options=None) == 20480
+def test_multi_part_eight_ans_caps_at_ceiling() -> None:
+    # 6000 + 8*2200 = 23600 — caps at 22000.
+    q = "[ANS] [ANS] [ANS] [ANS] [ANS] [ANS] [ANS] [ANS]"
+    assert allocate_max_tokens(q, None) == _CEILING
 
 
-# ─── allocate_max_tokens — free-form single ───────────────────────────────
+def test_multi_part_uses_max_of_ans_and_letters() -> None:
+    # 4 [ANS] vs 2 letters → uses 4.
+    q = "[ANS] [ANS] [ANS] [ANS] (a) X (b) Y"
+    # 6000 + 4*2200 = 14800
+    assert allocate_max_tokens(q, None) == 14800
 
 
-def test_single_free_returns_floor():
-    assert allocate_max_tokens("Compute the integral.", options=None) == 12288
+# ─── Free-form single ───────────────────────────────────────────────────────
 
 
-def test_single_free_with_one_part_marker_returns_floor():
-    q = "consider x^2 where (a + 1) is the leading coefficient"
-    assert allocate_max_tokens(q, options=None) == 12288
+def test_free_single_at_floor() -> None:
+    # free_single sits at the floor (12k) by design.
+    assert allocate_max_tokens("Compute 1+1.", None) == _FLOOR
 
 
-# ─── Floor / ceiling overrides ────────────────────────────────────────────
+def test_free_single_with_one_ans_placeholder() -> None:
+    # One [ANS] is still single-answer; budget stays at floor.
+    assert allocate_max_tokens("Solve: 2+2 = [ANS]", None) == _FLOOR
 
 
-def test_custom_floor_lowers_minimum():
-    # Caller can override floor to allow tighter budgets.
-    assert allocate_max_tokens("Compute X.", options=None, floor=8000) == 8000
+def test_free_single_with_one_letter_marker() -> None:
+    # "compute (a+b)^2" has one (a) marker — still single answer.
+    assert allocate_max_tokens("compute (a+b)^2", None) == _FLOOR
 
 
-def test_custom_ceiling_caps_max():
-    # Caller can lower ceiling to keep KV cache headroom.
-    assert allocate_max_tokens("[ANS]" * 8, options=None, ceiling=18000) == 18000
+# ─── Floor / ceiling invariants ─────────────────────────────────────────────
 
 
-def test_no_question_text_with_options_returns_mcq_budget():
-    """Even a degenerate empty question, options-bearing routes to MCQ math."""
-    assert allocate_max_tokens("", options=["A", "B", "C", "D"]) == 12288
+def test_all_outputs_within_bounds() -> None:
+    cases = [
+        ("Q", None),
+        ("Q [ANS]", None),
+        ("Q [ANS] [ANS]", None),
+        ("(a) X (b) Y (c) Z", None),
+        ("Q", []),
+        ("Q", ["a", "b"]),
+        ("Q", [str(i) for i in range(20)]),
+    ]
+    for q, opts in cases:
+        v = allocate_max_tokens(q, opts)
+        assert _FLOOR <= v <= _CEILING, f"{(q, opts)!r} → {v}"
+
+
+def test_empty_options_treated_as_free_form() -> None:
+    # Empty list is falsy — should route to free-form, not MCQ.
+    assert allocate_max_tokens("Compute 2+2.", []) == _FLOOR
+
+
+def test_floor_matches_phase0_baseline() -> None:
+    # Phase 0 used max_tokens=12288. Floor must be at least 12000 so
+    # no question type gets less budget than the proven baseline.
+    assert _FLOOR >= 12000
