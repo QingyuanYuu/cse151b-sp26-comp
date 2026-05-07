@@ -48,6 +48,7 @@ import os
 import pathlib
 import time
 
+from cse151b_comp.evaluate import score_response
 from cse151b_comp.extract import (
     extract_all_final_boxed,
     extract_letter,
@@ -224,8 +225,21 @@ def main() -> None:
     args = p.parse_args()
 
     _setup_env()
+    # Singleton Judger for the per-row `correct` field. score_response()
+    # dispatches Judger.auto_judge for free-form types (handles SymPy +
+    # LaTeX equivalence) and exact-letter match for MCQ. See bug fix
+    # rationale in the comment near the `correct` assignment below.
+    import sys as _sys
+
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
+
+    _repo_root = pathlib.Path(__file__).resolve().parents[2]
+    if str(_repo_root) not in _sys.path:
+        _sys.path.insert(0, str(_repo_root))
+    from judger import Judger as _Judger  # noqa: E402  (sys.path patch)
+
+    _judger = _Judger(strict_extract=False)
 
     rows = [json.loads(line) for line in open(args.input)]
     if args.val:
@@ -390,9 +404,18 @@ def main() -> None:
 
                 gold = item.get("answer")
                 if gold is not None:
-                    gold_norm = _normalize_gold(qtype, gold)
                     record["answer"] = gold
-                    record["correct"] = winning == gold_norm
+                    # Use the full course Judger.auto_judge (via score_response)
+                    # for `correct`. The previous string-equality on canonical
+                    # forms (winning == _normalize_gold(...)) silently under-
+                    # counted symbolic answers — Run F K=1 public was off by
+                    # 9.41pp (53.73% reported vs 63.14% true). See
+                    # reports/runF_public_rejudge_finding.md (jason/dev 4f250a9).
+                    options = item.get("options")
+                    record["correct"] = score_response(winning_response, gold, options, _judger)
+                    # solvable_but_missed retains the canonical-form comparison
+                    # since it's about voting headroom, not leaderboard prediction.
+                    gold_norm = _normalize_gold(qtype, gold)
                     record["solvable_but_missed"] = solvable_but_missed(extracted, winning, gold_norm)
 
                 out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
