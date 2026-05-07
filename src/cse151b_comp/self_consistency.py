@@ -206,6 +206,7 @@ def main() -> None:
             "runh",
             "runi",
             "runj",
+            "runj_final",
             "runj_trig",
             "runj_geom",
             "runj_stats_hyp",

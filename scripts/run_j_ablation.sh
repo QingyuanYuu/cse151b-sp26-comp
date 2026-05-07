@@ -104,6 +104,18 @@ done
 echo ""
 echo "=== Summary ==="
 PYTHONPATH=src .venv/bin/python scripts/summarize_j_ablation.py
+
+echo ""
+echo "=== Building final-J composition from ablation results ==="
+PYTHONPATH=src .venv/bin/python scripts/build_final_j.py
+
+echo ""
+echo "=== Launching final-J on full public 1126 (auto-chain) ==="
+scripts/run_final_j_public.sh
+
+echo ""
+echo "=== Ablation chain done at $(date "+%H:%M:%S") ==="
+echo "Final-J public run is now running detached. Monitor: logs/runj_final_public.log"
 rm -f '"$PID_FILE"'
 ' < /dev/null > "$LOG" 2>&1 &
 

@@ -244,4 +244,43 @@ __all__ = [
     "build_prompt_runj_prob",
     "build_prompt_runj_discrete",
     "build_prompt_runj_stats",
+    "build_prompt_runj_final",
 ]
+
+
+# ─── Final Run J: dynamic from ablation results ────────────────────────
+
+
+def _load_final_j_branches() -> tuple[str, ...]:
+    """Read which branches to enable from data/runj_final_branches.txt.
+
+    The file is written by `scripts/build_final_j.py` after ablation.
+    If missing, default to all 8 branches (full Run J = build_prompt_runj).
+    """
+    import pathlib
+
+    path = pathlib.Path("data/runj_final_branches.txt")
+    if not path.exists():
+        return tuple(_BRANCH_PROMPTS.keys())
+    enabled = [line.strip() for line in path.read_text().splitlines() if line.strip()]
+    # Filter to known branch names (skip typos / orphans).
+    return tuple(b for b in enabled if b in _BRANCH_PROMPTS)
+
+
+def build_prompt_runj_final(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run J with branches determined by ablation results.
+
+    Reads `data/runj_final_branches.txt` at every call (cheap; small file).
+    If the file is absent, falls through to the full 8-branch design.
+    """
+    enabled = _load_final_j_branches()
+
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNF_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+
+    topic = detect_topic(question)
+    if topic in enabled and topic in _BRANCH_PROMPTS:
+        return _BRANCH_PROMPTS[topic], question
+    return RUNF_SYSTEM_PROMPT_FREE, question
