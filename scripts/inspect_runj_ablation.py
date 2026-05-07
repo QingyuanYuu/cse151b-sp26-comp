@@ -47,6 +47,24 @@ def _load(path: pathlib.Path) -> list[dict]:
     return [json.loads(line) for line in open(path)]
 
 
+# SC outputs don't carry the original question text — load from public.jsonl by id.
+_PUBLIC_BY_ID: dict | None = None
+
+
+def _question_for(qid) -> str:
+    global _PUBLIC_BY_ID
+    if _PUBLIC_BY_ID is None:
+        _PUBLIC_BY_ID = {}
+        for src in ("data/public.jsonl", "data/private.jsonl"):
+            p = pathlib.Path(src)
+            if not p.exists():
+                continue
+            for line in open(p):
+                r = json.loads(line)
+                _PUBLIC_BY_ID[r["id"]] = r.get("question", "")
+    return _PUBLIC_BY_ID.get(qid, "")
+
+
 def _len_chars(row: dict) -> int:
     """Best-effort response length. Some rows have winning_response, others
     have responses[0]. Fall back to '' if missing."""
@@ -109,9 +127,9 @@ def _summarize_branch(topic: str) -> None:
         print(f"\n  Wins ({min(3, len(wins))} samples — variant fixed):")
         for qid in wins[: min(3, len(wins))]:
             r = by_id_v[qid]
-            q = r["question"][:200].replace("\n", " ")
+            q = _question_for(qid)[:200].replace("\n", " ")
             ans = str(r.get("answer", ""))[:80]
-            ext = str(r.get("extracted") or r.get("voted_answer") or "")[:80]
+            ext = str(r.get("winning_answer") or "")[:80]
             print(f"    [{qid}] {q}")
             print(f"      gold: {ans!r}")
             print(f"      variant_extracted: {ext!r}")
@@ -121,10 +139,10 @@ def _summarize_branch(topic: str) -> None:
         for qid in losses[: min(3, len(losses))]:
             r_b = by_id_b[qid]
             r_v = by_id_v[qid]
-            q = r_b["question"][:200].replace("\n", " ")
+            q = _question_for(qid)[:200].replace("\n", " ")
             ans = str(r_b.get("answer", ""))[:80]
-            ext_b = str(r_b.get("extracted") or r_b.get("voted_answer") or "")[:80]
-            ext_v = str(r_v.get("extracted") or r_v.get("voted_answer") or "")[:80]
+            ext_b = str(r_b.get("winning_answer") or "")[:80]
+            ext_v = str(r_v.get("winning_answer") or "")[:80]
             print(f"    [{qid}] {q}")
             print(f"      gold: {ans!r}")
             print(f"      baseline_extracted: {ext_b!r}  ✓")
