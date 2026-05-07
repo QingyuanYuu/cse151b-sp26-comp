@@ -96,11 +96,11 @@ def _select_prompt_builder(name: str):
         return build_prompt
     # Run B/C/D/E variants live in prompts.py and are self-contained — each
     # is a (question, options) -> (system, user) function with no extra state.
-    if name in ("runb", "runc", "rund", "rune", "runf", "rung"):
+    if name in ("runb", "runc", "rund", "rune", "runf", "rung", "runh"):
         import cse151b_comp.prompts as _p
 
         return getattr(_p, f"build_prompt_{name}")
-    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung")
+    raise ValueError(f"Unknown --prompt {name!r}; choices: phase0, current, runb, runc, rund, rune, runf, rung, runh")
 
 
 # ─── Question type ─────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@ def main() -> None:
     p.add_argument(
         "--prompt",
         default="phase0",
-        choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf", "rung"],
+        choices=["phase0", "current", "runb", "runc", "rund", "rune", "runf", "rung", "runh"],
         help="Which prompt set to use. phase0 = starter (proven 0.575 leaderboard); "
         "current = v6 per-type routing; runb/c/d/e are jason/dev's incremental "
         "improvements (Run B = leaderboard 0.60). Run E is the aggressive "
@@ -287,10 +287,11 @@ def main() -> None:
     # accepts a list whose length matches prompts, applying each per-prompt.
     per_prompt_sp: list[SamplingParams] | None = None
     if args.allocate_tokens:
-        # Run G uses v2 budget (floor 16k, MCQ cap 22k, multi cap 30k).
-        # All other prompts use v1 (floor 12k, MCQ cap 18k, multi cap 22k).
-        # Both signatures are (question, options) -> int — no kwargs.
-        if args.prompt == "rung":
+        # Auto-enable v2 budget (floor 16k, MCQ cap 22k, multi cap 30k) for
+        # Run F-final and Run G — both designed against v2. Other prompts use
+        # v1 (floor 12k, MCQ cap 18k, multi cap 22k). Mirrors jason/dev's
+        # `auto_v2_prompts` list in inference.py (commit ee43f97).
+        if args.prompt in ("rung", "runf"):
             from cse151b_comp.budget import allocate_max_tokens_v2 as _allocator
 
             budget_label = "v2"

@@ -517,6 +517,17 @@ def build_prompt_rune(question: str, options: list[str] | None) -> tuple[str, st
 # Run D footguns, add Run E's MCQ elimination clause, do NOT add
 # topic routing or 5-shot or "be concise". Target free <= 230 tokens.
 
+# NOTE: Run F is now a "config bundle" not just a prompt. The CLI auto-
+# enables v2 budget when --prompt runf is selected (floor 16k, MCQ cap
+# 22k, multi cap 30k). This is the "Run F final" config:
+#
+#     Run F (final) = Run F prompt + v2 budget
+#
+# Day1-distill-pool's Run F val 58.67% used v1 budget (12k floor); the
+# final config inherits the prompt but adds the v2 budget fix that
+# addresses Run C's free_single starvation. Use --budget-v1 to force
+# the older v1 budget for reproducing the day1 number.
+
 RUNF_SYSTEM_PROMPT_MCQ = (
     "You are an expert mathematician. Read the problem and the answer "
     "choices, then select the single best answer.\n\n"
@@ -615,6 +626,78 @@ def build_prompt_rung(question: str, options: list[str] | None) -> tuple[str, st
         opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
         return RUNG_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
     return RUNG_SYSTEM_PROMPT_FREE, question
+
+
+# ─── Run H: Run B + 2 cautious additions only ─────────────────────────────
+#
+# After validating that prompt iteration B → C → D → E → F → G is in K=1
+# noise on stratified val (1.78 pp spread) and that K=8 SC + Phase 0
+# already wins on private (0.611 vs Run B 0.600), Run H is the
+# minimum-risk extension of Run B as the K=8 SC base prompt.
+#
+# Only TWO additions, each independently validated as non-harmful:
+#
+# 1. **End-with-box rule for free-form**: rephrase "Put your final
+#    answer in \\boxed{}" → "End your response with your final answer
+#    inside \\boxed{}". Run C/D/F/G all carry this rule; no run was
+#    attributable regression to it. May rescue 5-10 of Run B's 113
+#    private no-box failures.
+#
+# 2. **MCQ 8+ option elimination clause**: Run E (the run that crashed
+#    overall) was the only place this clause was tested in isolation,
+#    and MCQ accuracy on val held at 73.3% — the elimination clause
+#    did NOT contribute to E's collapse. Run F kept it; Run F MCQ
+#    74.7%. Targeted at 10-opt MCQ (267/300 of private MCQ) where Run
+#    B has 11 % no-box rate from Qwen enumerating every option.
+#
+# What's intentionally NOT in Run H:
+#
+# - No worked examples (C/D/E/F/G all tried; net wash on val,
+#   id=5/30/135 echo bugs introduced).
+# - No Yes/Tuesday/True inline rule (Run C's id=30 cause).
+# - No topic routing (Run E crashed).
+# - No per-type budget (Run B's flat 16 k on private = 0.600; varying
+#   the floor introduced 12 k starvation in Run C).
+# - Length kept under 175 tokens (Run B's 137 + ~30 for elim clause).
+#
+# Hypothesis: Run H ≈ Run B on K=1 single-shot val (within noise), but
+# slightly stronger when paired with K=8 SC because end-with-box +
+# elimination both reduce no-box rate, and SC's voting then converges
+# on the boxed answers.
+
+RUNH_SYSTEM_PROMPT_MCQ = (
+    "You are an expert mathematician. Read the problem and the answer "
+    "choices, then select the single best answer.\n\n"
+    "Output ONLY the letter inside \\boxed{}, e.g. \\boxed{C}. "
+    "Do NOT write \\boxed{(C)}, \\boxed{C.}, or \\boxed{C)}. "
+    "Do NOT include the option content or any \\text{} / \\textbf{} macros. "
+    "Output exactly one \\boxed{...} at the end of your response.\n\n"
+    "For 8+ option questions: eliminate clearly-wrong choices first, then "
+    "commit. Do not derive every option in detail."
+)
+
+RUNH_SYSTEM_PROMPT_FREE = (
+    "You are an expert mathematician. Solve step-by-step. End your "
+    "response with your final answer inside \\boxed{}.\n\n"
+    "For multiple sub-answers: use ONE \\boxed{} with values "
+    "comma-separated, like \\boxed{3, 7, 12}. Do NOT use multiple "
+    "\\boxed{} blocks. Do NOT use \\quad, \\qquad, or section headers "
+    "near the final answer.\n\n"
+    "If the exact answer is irrational (involves \\sqrt, \\pi, e^x, \\ln, "
+    "or unsimplified fractions \\frac{p}{q}), keep it symbolic — write "
+    "\\boxed{2\\pi}, \\boxed{\\frac{1}{2}}, "
+    "\\boxed{-\\frac{7\\sqrt{149}}{149}} — do not convert to decimal "
+    "unless the question asks for one."
+)
+
+
+def build_prompt_runh(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run H prompt builder: Run B + end-with-box (free) + 8+ option elim (MCQ)."""
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNH_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    return RUNH_SYSTEM_PROMPT_FREE, question
 
 
 # ─── Build prompt ─────────────────────────────────────────────────────────
