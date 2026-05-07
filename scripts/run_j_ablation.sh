@@ -108,16 +108,24 @@ echo "=== Summary ==="
 PYTHONPATH=src .venv/bin/python scripts/summarize_j_ablation.py
 
 echo ""
-echo "=== Building final-J composition from ablation results ==="
-PYTHONPATH=src .venv/bin/python scripts/build_final_j.py
+echo "=== Deep per-branch review (for human/Claude review) ==="
+mkdir -p reports
+PYTHONPATH=src .venv/bin/python scripts/inspect_runj_ablation.py \
+    > reports/runj_ablation_review.md 2>&1
+echo "Wrote deep review to reports/runj_ablation_review.md"
 
 echo ""
-echo "=== Launching final-J on full public 1126 (auto-chain) ==="
-scripts/run_final_j_public.sh
-
+echo "=== Ablation done at $(date "+%H:%M:%S") ==="
 echo ""
-echo "=== Ablation chain done at $(date "+%H:%M:%S") ==="
-echo "Final-J public run is now running detached. Monitor: logs/runj_final_public.log"
+echo "Pipeline paused for manual review. Next steps:"
+echo "  1. Read reports/runj_ablation_review.md (or pipe inspect_runj_ablation.py through less)"
+echo "  2. Decide KEEP/DROP per branch — apply judgment beyond Δ"
+echo "     (length blowup, multi-box regression, routing mistakes, etc.)"
+echo "  3. Build final-J:"
+echo "       Auto:     PYTHONPATH=src .venv/bin/python scripts/build_final_j.py"
+echo "       Override: PYTHONPATH=src .venv/bin/python scripts/build_final_j.py \\"
+echo "                   --branches olympiad,trig,geometry,..."
+echo "  4. Fire public 1126: scripts/run_final_j_public.sh"
 rm -f '"$PID_FILE"'
 ' < /dev/null > "$LOG" 2>&1 &
 

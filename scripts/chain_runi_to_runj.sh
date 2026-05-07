@@ -1,11 +1,23 @@
 #!/usr/bin/env bash
 #
 # After the Run I chain finishes, automatically:
-# 1. Run Run J ablation harness (~1.5h)
-# 2. Build final J from ablation results (instant)
-# 3. Run final J on public 1126 (~80-90min)
+# 1. Run Run J ablation harness (~1.5h, 18 inferences)
+# 2. Auto-summarize + write deep per-branch review to reports/runj_ablation_review.md
+# 3. STOP — wait for human/Claude review of the ablation results
 #
-# Total: ~3h after Run I chain finishes.
+# Final-J composition + public run are NOT auto-fired. After the chain
+# stops, do (manually):
+#     # Read the review:
+#     less reports/runj_ablation_review.md
+#     # Decide KEEP/DROP per branch, then build final-J:
+#     PYTHONPATH=src .venv/bin/python scripts/build_final_j.py \
+#         --branches olympiad,trig,geometry,...
+#     # Fire public 1126:
+#     scripts/run_final_j_public.sh
+#
+# This split exists so we can apply judgment beyond a Δ threshold —
+# response length blowup, multi-box rate regression, topic routing
+# mistakes, etc. — before committing the final composition.
 #
 # Usage:
 #     scripts/chain_runi_to_runj.sh
@@ -44,12 +56,12 @@ setsid bash -c "
         sleep 60
     done
 
-    # build_final_j and run_final_j_public are inside ablation script's tail,
-    # which fires *before* the ablation pid clears. So once we get here,
-    # final-J public is also running detached.
-
-    echo \"[\$(date)] Chain dispatched. Final-J public now running detached.\"
-    echo \"      Monitor: tail -f logs/runj_final_public.log\"
+    echo \"[\$(date)] Ablation chain done. Pipeline PAUSED for review.\"
+    echo \"      Read review:  less reports/runj_ablation_review.md\"
+    echo \"      Then decide branches and run:\"
+    echo \"        PYTHONPATH=src .venv/bin/python scripts/build_final_j.py \\\\\"
+    echo \"            --branches <comma-list>\"
+    echo \"        scripts/run_final_j_public.sh\"
 " < /dev/null > "$LOG" 2>&1 &
 
 CHAIN_PID=$!
@@ -61,13 +73,16 @@ Chain watcher started (waiting for Run I chain to finish, then runs J ablation +
 
 Sequence:
   1. Wait for Run I chain (PID $RUNI_PID) to exit
-  2. Run scripts/run_j_ablation.sh           (~1.5h)
-  3. (auto) Run scripts/build_final_j.py     (instant)
-  4. (auto) Run scripts/run_final_j_public.sh (~80-90min)
+  2. Run scripts/run_j_ablation.sh                    (~1.5h, 18 inferences)
+  3. Auto-summarize + write reports/runj_ablation_review.md
+  4. STOP — manual review of ablation results.
+
+After the pause, you (or Claude) decide branch composition:
+  PYTHONPATH=src .venv/bin/python scripts/build_final_j.py --branches <list>
+  scripts/run_final_j_public.sh
 
 Monitors:
   Chain         : tail -f $LOG
   Run I chain   : tail -f logs/runi_chain.log
   Ablation      : tail -f logs/runj_ablation.log    (will appear after #1)
-  Final-J public: tail -f logs/runj_final_public.log (will appear after #3)
 EOF
