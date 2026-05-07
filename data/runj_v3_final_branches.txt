@@ -1,0 +1,6 @@
+olympiad
+stats_hyp_test
+stats_descriptive
+prob_combi
+calculus
+number_alg

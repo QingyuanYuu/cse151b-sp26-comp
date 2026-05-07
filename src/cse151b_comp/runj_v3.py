@@ -194,6 +194,34 @@ def build_prompt_runj_v3(question: str, options: list[str] | None) -> tuple[str,
     return system, question
 
 
+def _load_v3_final_branches() -> tuple[str, ...]:
+    """Read enabled branches from data/runj_v3_final_branches.txt.
+
+    Default if file missing: the 6 winners from v3 ablation
+    (olympiad, stats_hyp_test, stats_descriptive, prob_combi, calculus, number_alg).
+    """
+    import pathlib
+
+    path = pathlib.Path("data/runj_v3_final_branches.txt")
+    if not path.exists():
+        return ("olympiad", "stats_hyp_test", "stats_descriptive", "prob_combi", "calculus", "number_alg")
+    enabled = [line.strip() for line in path.read_text().splitlines() if line.strip()]
+    return tuple(b for b in enabled if b in _BRANCH_PROMPTS)
+
+
+def build_prompt_runj_v3_final(question: str, options: list[str] | None) -> tuple[str, str]:
+    """Run J v3 final: only enabled branches; rest fall through to Run F."""
+    enabled = _load_v3_final_branches()
+    if options:
+        labels = [chr(65 + i) for i in range(len(options))]
+        opts_text = "\n".join(f"{lbl}. {opt.strip()}" for lbl, opt in zip(labels, options))
+        return RUNF_SYSTEM_PROMPT_MCQ, f"{question}\n\nOptions:\n{opts_text}"
+    topic = detect_topic(question)
+    if topic in enabled and topic in _BRANCH_PROMPTS:
+        return _BRANCH_PROMPTS[topic], question
+    return RUNF_SYSTEM_PROMPT_FREE, question
+
+
 def _make_ablation(enabled_topics: tuple[str, ...]):
     def builder(question: str, options: list[str] | None) -> tuple[str, str]:
         if options:
@@ -221,6 +249,7 @@ build_prompt_runj_v3_number_alg = _make_ablation(("number_alg",))
 
 __all__ = [
     "build_prompt_runj_v3",
+    "build_prompt_runj_v3_final",
     "build_prompt_runj_v3_olympiad",
     "build_prompt_runj_v3_trig",
     "build_prompt_runj_v3_geom",
