@@ -62,7 +62,10 @@ def main() -> None:
     p.add_argument("--output", required=True, help="LoRA adapter output dir")
     p.add_argument("--r", type=int, default=32)
     p.add_argument("--alpha", type=int, default=64)
-    p.add_argument("--epochs", type=int, default=4)
+    p.add_argument(
+        "--epochs", type=int, default=5, help="Run up to N epochs; load_best_model_at_end picks the best by eval_loss"
+    )
+    p.add_argument("--eval-frac", type=float, default=0.1, help="Fraction of SFT pool held out for eval (0 to disable)")
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--grad-accum", type=int, default=4, help="effective bsz = batch_size × grad_accum")
@@ -90,8 +93,19 @@ def main() -> None:
 
     # Build dataset
     rows = _load_sft(pathlib.Path(args.train))
-    dataset = Dataset.from_list([{"text": _format_chat(r, tokenizer)} for r in rows])
-    print(f"[lora] formatted {len(dataset)} examples")
+    formatted = [{"text": _format_chat(r, tokenizer)} for r in rows]
+    full_ds = Dataset.from_list(formatted)
+
+    # Split off eval set for best-checkpoint selection
+    if args.eval_frac > 0:
+        split = full_ds.train_test_split(test_size=args.eval_frac, seed=42)
+        train_ds = split["train"]
+        eval_ds = split["test"]
+        print(f"[lora] split: {len(train_ds)} train + {len(eval_ds)} eval ({args.eval_frac*100:.0f}%)")
+    else:
+        train_ds = full_ds
+        eval_ds = None
+        print(f"[lora] using all {len(train_ds)} as train (no eval split)")
 
     # Base model in BF16 — 96GB Blackwell can hold it
     print(f"[lora] loading {MODEL_NAME} in BF16...")
@@ -124,7 +138,8 @@ def main() -> None:
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
-    # SFT config
+    # SFT config — track per-epoch eval loss, save best
+    has_eval = eval_ds is not None
     sft_config = SFTConfig(
         output_dir=args.output,
         num_train_epochs=args.epochs,
@@ -136,19 +151,27 @@ def main() -> None:
         bf16=True,
         max_seq_length=args.max_seq_len,
         logging_steps=10,
-        save_steps=args.save_every,
-        save_total_limit=3,
+        # Save and evaluate every epoch — pick best by eval loss
+        save_strategy="epoch",
+        eval_strategy="epoch" if has_eval else "no",
+        save_total_limit=args.epochs,  # keep all per-epoch ckpts
+        load_best_model_at_end=has_eval,
+        metric_for_best_model="eval_loss" if has_eval else None,
+        greater_is_better=False if has_eval else None,
         dataset_text_field="text",
-        report_to="none",  # set to "wandb" if you want
+        report_to="none",
         seed=42,
     )
 
-    trainer = SFTTrainer(
+    trainer_kwargs = dict(
         model=model,
-        train_dataset=dataset,
+        train_dataset=train_ds,
         args=sft_config,
         tokenizer=tokenizer,
     )
+    if has_eval:
+        trainer_kwargs["eval_dataset"] = eval_ds
+    trainer = SFTTrainer(**trainer_kwargs)
 
     print(f"[lora] starting training, output → {args.output}")
     trainer.train()

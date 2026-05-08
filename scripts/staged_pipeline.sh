@@ -119,14 +119,15 @@ setsid bash -c '
     n_sft=$(wc -l < data/sft_train_staged.jsonl)
     echo "[$(date)] SFT pool: $n_sft pairs"
 
-    # ─── Step 7: LoRA training (4 epochs) ──────────────────────────
-    echo "[$(date)] LoRA training 4 epochs..."
+    # ─── Step 7: LoRA training (up to 5 epochs, pick best by eval loss) ─────
+    echo "[$(date)] LoRA training up to 5 epochs (auto-pick best checkpoint)..."
     mkdir -p lora_weights/runj_distill_v1
 
     PYTHONPATH=src python scripts/train_lora.py \
         --train data/sft_train_staged.jsonl \
         --output lora_weights/runj_distill_v1 \
-        --epochs 4 \
+        --epochs 5 \
+        --eval-frac 0.1 \
         --r 32 \
         --alpha 64
 
@@ -147,9 +148,10 @@ Pipeline (will fire after K=8 SC private finishes):
   Stage 2: K=4 on hard1 subset (~170 q)         (~0.8h)
   Stage 3: K=8 on hard2 subset (~70 q)          (~0.5h)
   Step 6:  Merge pools → SFT data               (~5min)
-  Step 7:  LoRA train 4 epochs                  (~1.5h)
+  Step 7:  LoRA train up to 5 epochs + eval     (~2-2.5h)
+           (10% eval split; auto-pick best by eval_loss)
 
-Total from K=8 finish: ~7-8h
+Total from K=8 finish: ~7.5-8.5h
 Total from now: ~17h ≈ tomorrow morning ~12:00 PDT
 
 Monitor: tail -f $LOG
