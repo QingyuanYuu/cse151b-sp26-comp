@@ -62,7 +62,7 @@ def main() -> None:
     p.add_argument("--output", required=True, help="LoRA adapter output dir")
     p.add_argument("--r", type=int, default=32)
     p.add_argument("--alpha", type=int, default=64)
-    p.add_argument("--epochs", type=int, default=3)
+    p.add_argument("--epochs", type=int, default=4)
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--grad-accum", type=int, default=4, help="effective bsz = batch_size × grad_accum")
