@@ -111,18 +111,17 @@ def main() -> None:
     p.add_argument("--output", required=True, help="GRPO LoRA adapter output dir")
     p.add_argument("--public", default="data/public.jsonl")
     p.add_argument("--val", default="data/val_indices.json")
-    p.add_argument(
-        "--max-prompts", type=int, default=600, help="Subset size (default 600 to keep wallclock manageable)"
-    )
-    p.add_argument("--epochs", type=int, default=1)
-    p.add_argument("--num-generations", type=int, default=4, help="K samples per prompt (=group size)")
-    p.add_argument("--lr", type=float, default=5e-6, help="GRPO needs lower LR than SFT")
+    p.add_argument("--max-prompts", type=int, default=900, help="Subset size (default 900 = nearly all train)")
+    p.add_argument("--epochs", type=int, default=4, help="More epochs = longer + more refinement")
+    p.add_argument("--num-generations", type=int, default=8, help="K samples per prompt (group size)")
+    p.add_argument("--lr", type=float, default=3e-6, help="Conservative for stability over long training")
     p.add_argument("--beta", type=float, default=0.04, help="KL penalty vs reference model (drift control)")
+    p.add_argument("--use-vllm", action="store_true", default=True, help="Use vLLM colocate for fast sampling")
     p.add_argument(
         "--max-completion-length",
         type=int,
-        default=4096,
-        help="Max generation length. TRL 1.3 truncates prompt at tokenizer level.",
+        default=6144,
+        help="Max generation length. Longer = slower per step but allows longer reasoning.",
     )
     p.add_argument("--temperature", type=float, default=0.7)
     p.add_argument("--top-p", type=float, default=0.95)
@@ -179,7 +178,7 @@ def main() -> None:
     )
 
     # GRPO config
-    grpo_config = GRPOConfig(
+    grpo_config_kwargs = dict(
         output_dir=args.output,
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
@@ -197,12 +196,19 @@ def main() -> None:
         # Standard
         logging_steps=5,
         save_strategy="epoch",
-        save_total_limit=2,
+        save_total_limit=args.epochs,
         report_to="none",
         seed=42,
-        # vLLM for fast generation (if supported in this TRL version)
-        # use_vllm=True,  # uncomment if memory allows
     )
+    # vLLM colocate for fast sampling (~5-15s per group vs 30-60s with HF)
+    if args.use_vllm:
+        grpo_config_kwargs.update(
+            use_vllm=True,
+            vllm_mode="colocate",
+            vllm_gpu_memory_utilization=0.4,  # leave room for trainer's policy + ref
+            vllm_max_model_length=8192,  # prompt + completion
+        )
+    grpo_config = GRPOConfig(**grpo_config_kwargs)
 
     # GRPOTrainer
     print("[grpo] initializing GRPOTrainer...")

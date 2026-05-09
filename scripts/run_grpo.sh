@@ -52,16 +52,17 @@ setsid bash -c "
     PYTHONPATH=src .venv/bin/python scripts/train_grpo.py \
         --base '$BASE' \
         --output '$OUTPUT' \
-        --max-prompts 600 \
-        --epochs 1 \
-        --num-generations 4 \
-        --lr 5e-6 \
+        --max-prompts 900 \
+        --epochs 4 \
+        --num-generations 8 \
+        --lr 3e-6 \
         --beta 0.04 \
         --r 16 \
         --alpha 32 \
         --batch-size 1 \
         --grad-accum 4 \
-        --max-completion-length 4096 \
+        --max-completion-length 6144 \
+        --use-vllm \
         $EXTRA_ARGS
 
     rc=\$?
@@ -80,13 +81,14 @@ GRPO training started.
   Log:    $LOG
 
 Config:
-  600 prompts × K=4 generations × 1 epoch
-  LoRA r=16 alpha=32 (smaller than SFT v1's r=32)
-  lr=5e-6 (10x smaller than SFT)
-  beta=0.04 (KL penalty vs reference)
-  max_completion=4096 tokens
+  900 prompts × K=8 generations × 4 epochs (= 28800 sample-passes)
+  LoRA r=16 alpha=32
+  lr=3e-6 (conservative for stability)
+  beta=0.04 (KL penalty)
+  max_completion=6144 tokens
+  use_vllm=True (colocate, fast sampling)
 
-Wallclock estimate: ~6-10h.
+Wallclock estimate: ~14-16h on Blackwell with vLLM colocate.
 Started: $(date '+%Y-%m-%d %H:%M %Z')
 
 Monitor:
