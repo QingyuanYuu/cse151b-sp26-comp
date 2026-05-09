@@ -69,7 +69,9 @@ def main() -> None:
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--grad-accum", type=int, default=4, help="effective bsz = batch_size × grad_accum")
-    p.add_argument("--max-seq-len", type=int, default=8192)
+    p.add_argument(
+        "--max-seq-len", type=int, default=6144, help="max sequence length; longer examples are filtered out"
+    )
     p.add_argument("--lora-dropout", type=float, default=0.05)
     p.add_argument("--save-every", type=int, default=200, help="save checkpoint every N steps")
     args = p.parse_args()
@@ -91,9 +93,18 @@ def main() -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Build dataset
+    # Build dataset; filter examples too long for the GPU
     rows = _load_sft(pathlib.Path(args.train))
-    formatted = [{"text": _format_chat(r, tokenizer)} for r in rows]
+    formatted = []
+    n_skipped = 0
+    for r in rows:
+        text = _format_chat(r, tokenizer)
+        n_tok = len(tokenizer.encode(text))
+        if n_tok > args.max_seq_len:
+            n_skipped += 1
+            continue
+        formatted.append({"text": text})
+    print(f"[lora] kept {len(formatted)}/{len(rows)} (skipped {n_skipped} examples > {args.max_seq_len} tokens)")
     full_ds = Dataset.from_list(formatted)
 
     # Split off eval set for best-checkpoint selection
