@@ -149,7 +149,7 @@ def main() -> None:
         lr_scheduler_type="cosine",
         warmup_ratio=0.05,
         bf16=True,
-        max_seq_length=args.max_seq_len,
+        max_length=args.max_seq_len,
         logging_steps=10,
         # Save and evaluate every epoch — pick best by eval loss
         save_strategy="epoch",
@@ -167,7 +167,7 @@ def main() -> None:
         model=model,
         train_dataset=train_ds,
         args=sft_config,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,  # TRL 1.0+ renamed 'tokenizer' → 'processing_class'
     )
     if has_eval:
         trainer_kwargs["eval_dataset"] = eval_ds
