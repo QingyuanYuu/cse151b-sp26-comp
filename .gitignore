@@ -130,3 +130,6 @@ templates/milestone-report/*.blg
 templates/milestone-report/*.synctex.gz
 templates/milestone-report/*.fdb_latexmk
 templates/milestone-report/*.fls
+
+# LoRA training outputs (large; not for git)
+lora_weights/
