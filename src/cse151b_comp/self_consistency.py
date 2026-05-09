@@ -283,6 +283,18 @@ def main() -> None:
     )
     p.add_argument("--seed", type=int, default=42, help="Base seed; per-sample seed varies internally.")
     p.add_argument(
+        "--model",
+        default="Qwen/Qwen3-4B-Thinking-2507",
+        help="HF model id or local path. Default: locked competition model. "
+        "For LoRA-merged models, pass the merged dir.",
+    )
+    p.add_argument(
+        "--bf16",
+        action="store_true",
+        help="Disable bitsandbytes 4-bit quantization, load in full BF16. "
+        "Required for LoRA-merged models (which lack quantization config).",
+    )
+    p.add_argument(
         "--chunk-size",
         type=int,
         default=0,
@@ -356,14 +368,12 @@ def main() -> None:
     if args.chunk_size > 0:
         print(f"[sc] Incremental mode: chunk_size={args.chunk_size} (output written per chunk).")
 
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Thinking-2507")
+    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
 
-    llm = LLM(
-        model="Qwen/Qwen3-4B-Thinking-2507",
-        quantization="bitsandbytes",
-        load_format="bitsandbytes",
-        enable_prefix_caching=True,  # K samples share prompt prefix
+    llm_kwargs = dict(
+        model=args.model,
+        enable_prefix_caching=True,
         gpu_memory_utilization=args.gpu_mem_util,
         max_model_len=args.max_model_len,
         trust_remote_code=True,
@@ -371,6 +381,11 @@ def main() -> None:
         max_num_batched_tokens=args.max_model_len,
         seed=args.seed,
     )
+    if not args.bf16:
+        llm_kwargs["quantization"] = "bitsandbytes"
+        llm_kwargs["load_format"] = "bitsandbytes"
+
+    llm = LLM(**llm_kwargs)
 
     def _build_sp(max_tokens: int) -> SamplingParams:
         return SamplingParams(
