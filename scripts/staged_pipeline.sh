@@ -123,7 +123,7 @@ setsid bash -c '
     echo "[$(date)] LoRA training up to 5 epochs (auto-pick best checkpoint)..."
     mkdir -p lora_weights/runj_distill_v1
 
-    PYTHONPATH=src python scripts/train_lora.py \
+    PYTHONPATH=src .venv/bin/python scripts/train_lora.py \
         --train data/sft_train_staged.jsonl \
         --output lora_weights/runj_distill_v1 \
         --epochs 5 \
