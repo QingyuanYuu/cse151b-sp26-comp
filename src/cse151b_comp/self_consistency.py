@@ -108,6 +108,10 @@ def _select_prompt_builder(name: str):
     # one branch (or one group), others fall through to Run F generic.
     # `runj` is the full 9-branch design; `runj_final` is dynamically
     # composed from ablation results.
+    if name == "runk_fix":
+        from cse151b_comp.runk_fix import build_prompt_runk_fix
+
+        return build_prompt_runk_fix
     if name.startswith("runj_v3"):
         import cse151b_comp.runj_v3 as _rj3
 
@@ -265,6 +269,7 @@ def main() -> None:
             "runj_v3_calc",
             "runj_v3_prob",
             "runj_v3_number_alg",
+            "runk_fix",
         ],
         help="Which prompt set to use. phase0 = starter (proven 0.575 leaderboard); "
         "current = v6 per-type routing; runb/c/d/e are jason/dev's incremental "
