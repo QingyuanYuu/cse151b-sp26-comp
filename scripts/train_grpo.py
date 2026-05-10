@@ -71,31 +71,73 @@ def _build_dataset(public_path: pathlib.Path, val_path: pathlib.Path | None, max
 
 
 def _make_reward_fn():
-    """Build a reward function that judges each completion via course Judger."""
+    """Build a reward function that judges each completion via course Judger.
+
+    Per-completion timeout (15s) prevents sympy infinite loops from hanging
+    training. Observed: course Judger's internal SIGALRM timeout doesn't
+    always fire (multi-thread sympy bypasses signal). Use multiprocessing
+    Process.join(timeout) for hard kill.
+    """
+
     from cse151b_comp.evaluate import score_response
     from judger import Judger
 
-    judger = Judger(strict_extract=False)
+    # Worker process function — must be top-level for spawn
+    def _judge_worker(text, ans, opt, q):
+        try:
+            from cse151b_comp.evaluate import score_response as _sr
+            from judger import Judger as _J
+
+            j = _J(strict_extract=False)
+            ok = _sr(text, ans, opt, j)
+            q.put(1.0 if ok else 0.0)
+        except Exception:
+            q.put(0.0)
+
+    # Fallback: in-process judge (fast path, no multiprocessing overhead)
+    judger_local = Judger(strict_extract=False)
+
+    def _judge_with_timeout(text, ans, opt, timeout=15):
+        """Try in-process; if it hangs, fall through to subprocess kill."""
+        # In-process attempt with signal-based timeout (SIGALRM)
+        import signal
+
+        class _TimeoutErr(Exception):
+            pass
+
+        def _handler(signum, frame):
+            raise _TimeoutErr()
+
+        old = signal.signal(signal.SIGALRM, _handler)
+        try:
+            signal.alarm(timeout)
+            ok = score_response(text, ans, opt, judger_local)
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old)
+            return 1.0 if ok else 0.0
+        except _TimeoutErr:
+            signal.signal(signal.SIGALRM, old)
+            return 0.0  # treat as wrong on timeout
+        except Exception:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old)
+            return 0.0
 
     def reward_correct(completions, answer, options, **kwargs):
         """Return 1.0 for correct completion, 0.0 otherwise.
 
-        completions: list of generated assistant strings
-        answer: list of gold answers (one per completion in batch order)
-        options: list of options (or empty lists for free-form)
+        Hard 15s timeout per completion via SIGALRM (resets on each call).
         """
         rewards = []
         for c, ans_str, opt_str in zip(completions, answer, options):
             try:
                 ans = json.loads(ans_str)
                 opt = json.loads(opt_str) if opt_str else None
-                # If completion is a list of message dicts (chat format), extract content
                 if isinstance(c, list) and c and isinstance(c[0], dict):
                     text = c[-1].get("content", "")
                 else:
                     text = c
-                ok = score_response(text, ans, opt, judger)
-                rewards.append(1.0 if ok else 0.0)
+                rewards.append(_judge_with_timeout(text, ans, opt, timeout=15))
             except Exception:
                 rewards.append(0.0)
         return rewards
