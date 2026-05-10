@@ -60,7 +60,7 @@ setsid bash -c "
         --r 16 \
         --alpha 32 \
         --batch-size 1 \
-        --grad-accum 4 \
+        --grad-accum 8 \
         --max-completion-length 6144 \
         --use-vllm \
         $EXTRA_ARGS

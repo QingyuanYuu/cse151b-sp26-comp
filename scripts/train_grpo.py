@@ -128,7 +128,7 @@ def main() -> None:
     p.add_argument("--r", type=int, default=16, help="LoRA rank (smaller than SFT for stability)")
     p.add_argument("--alpha", type=int, default=32)
     p.add_argument("--batch-size", type=int, default=1)
-    p.add_argument("--grad-accum", type=int, default=4)
+    p.add_argument("--grad-accum", type=int, default=8, help="bsz × grad_accum must be divisible by num_generations")
     args = p.parse_args()
 
     print(f"[grpo] base = {args.base}")
