@@ -32,11 +32,16 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 
-def _build_dataset(public_path: pathlib.Path, val_path: pathlib.Path | None, max_prompts: int):
+def _build_dataset(
+    public_path: pathlib.Path,
+    val_path: pathlib.Path | None,
+    max_prompts: int,
+    pool_path: pathlib.Path | None = None,
+):
     """Load public.jsonl, exclude val_ids, format as GRPO-ready dataset.
 
-    Each example: {prompt, answer, options, id}. The 'prompt' is the
-    Run F system+user formatted as a chat-template string.
+    If pool_path is provided, only keep prompts whose id is in pool_path's
+    "prompt_ids" — used for edge-filtered training (avoids zero-std groups).
     """
     from cse151b_comp.prompts import build_prompt_runf
 
@@ -45,11 +50,17 @@ def _build_dataset(public_path: pathlib.Path, val_path: pathlib.Path | None, max
     if val_path is not None and val_path.exists():
         val_ids = set(json.load(open(val_path))["val_ids"])
 
+    pool_ids: set | None = None
+    if pool_path is not None and pool_path.exists():
+        pool_ids = set(json.load(open(pool_path))["prompt_ids"])
+        print(f"[grpo] using edge-filtered pool: {len(pool_ids)} ids from {pool_path}")
+
     train = []
     for r in rows:
         if r["id"] in val_ids:
             continue
-        # Skip rows without answer (private set has none, but public.jsonl has all)
+        if pool_ids is not None and r["id"] not in pool_ids:
+            continue
         if not r.get("answer"):
             continue
         system, user = build_prompt_runf(r["question"], r.get("options"))
@@ -59,7 +70,7 @@ def _build_dataset(public_path: pathlib.Path, val_path: pathlib.Path | None, max
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                "answer": json.dumps(r["answer"]),  # serialize for safety
+                "answer": json.dumps(r["answer"]),
                 "options": json.dumps(r.get("options") or []),
                 "id": r["id"],
             }
@@ -124,9 +135,13 @@ def _make_reward_fn():
             return 0.0
 
     def reward_correct(completions, answer, options, **kwargs):
-        """Return 1.0 for correct completion, 0.0 otherwise.
+        """Length-aware binary reward.
 
-        Hard 15s timeout per completion via SIGALRM (resets on each call).
+        - Correct + len >= 2000 chars (~500 tokens reasoning): 1.0
+        - Correct + len < 2000 chars: 0.5  (anti-collapse: previous run
+          collapsed mean_terminated_length 2680→1345 tokens, -10pp on MC.
+          Penalize short correct answers to keep reasoning depth.)
+        - Wrong: 0.0
         """
         rewards = []
         for c, ans_str, opt_str in zip(completions, answer, options):
@@ -137,7 +152,10 @@ def _make_reward_fn():
                     text = c[-1].get("content", "")
                 else:
                     text = c
-                rewards.append(_judge_with_timeout(text, ans, opt, timeout=15))
+                base = _judge_with_timeout(text, ans, opt, timeout=15)
+                if base > 0.5 and len(text) < 2000:
+                    base = 0.5
+                rewards.append(base)
             except Exception:
                 rewards.append(0.0)
         return rewards
@@ -154,10 +172,16 @@ def main() -> None:
     p.add_argument("--public", default="data/public.jsonl")
     p.add_argument("--val", default="data/val_indices.json")
     p.add_argument("--max-prompts", type=int, default=900, help="Subset size (default 900 = nearly all train)")
+    p.add_argument(
+        "--pool",
+        default=None,
+        help="Optional JSON with {prompt_ids:[...]} to filter to edge-of-difficulty prompts. "
+        "Without this, GRPO collapses with frac_reward_zero_std → 1.0 (no gradient).",
+    )
     p.add_argument("--epochs", type=int, default=4, help="More epochs = longer + more refinement")
     p.add_argument("--num-generations", type=int, default=8, help="K samples per prompt (group size)")
-    p.add_argument("--lr", type=float, default=3e-6, help="Conservative for stability over long training")
-    p.add_argument("--beta", type=float, default=0.04, help="KL penalty vs reference model (drift control)")
+    p.add_argument("--lr", type=float, default=1e-5, help="Higher than first run (3e-6 was too small)")
+    p.add_argument("--beta", type=float, default=0.0, help="KL penalty vs reference (0 = let policy drift freely)")
     p.add_argument("--use-vllm", action="store_true", default=True, help="Use vLLM colocate for fast sampling")
     p.add_argument(
         "--max-completion-length",
@@ -165,17 +189,33 @@ def main() -> None:
         default=6144,
         help="Max generation length. Longer = slower per step but allows longer reasoning.",
     )
-    p.add_argument("--temperature", type=float, default=0.7)
+    p.add_argument("--temperature", type=float, default=1.0, help="Higher = more variance in K samples (was 0.7)")
     p.add_argument("--top-p", type=float, default=0.95)
     p.add_argument("--r", type=int, default=16, help="LoRA rank (smaller than SFT for stability)")
     p.add_argument("--alpha", type=int, default=32)
     p.add_argument("--batch-size", type=int, default=1)
     p.add_argument("--grad-accum", type=int, default=8, help="bsz × grad_accum must be divisible by num_generations")
+    p.add_argument("--lr-scheduler", default="constant", help="constant avoids cosine decay to ~0")
+    p.add_argument("--warmup-ratio", type=float, default=0.0)
+    p.add_argument("--loss-type", default="dr_grpo", help="dr_grpo = length-normalized; prevents length collapse")
+    p.add_argument("--importance-sampling-level", default="sequence", help="sequence-level IS = stabler than token")
+    p.add_argument("--epsilon", type=float, default=0.3)
+    p.add_argument("--epsilon-high", type=float, default=0.4, help="Asymmetric clipping (DAPO-style)")
+    p.add_argument("--top-entropy-quantile", type=float, default=1.0, help="<1 to focus loss on uncertain tokens")
+    p.add_argument(
+        "--disable-vllm-is-correction",
+        action="store_true",
+        help="Disable vLLM IS correction (default sequence_mask mode kills gradient on long sequences).",
+    )
     args = p.parse_args()
 
     print(f"[grpo] base = {args.base}")
     print(f"[grpo] output = {args.output}")
-    print(f"[grpo] config: K={args.num_generations} epochs={args.epochs} " f"lr={args.lr} beta={args.beta} r={args.r}")
+    print(
+        f"[grpo] config: K={args.num_generations} epochs={args.epochs} "
+        f"lr={args.lr} sched={args.lr_scheduler} beta={args.beta} temp={args.temperature} "
+        f"loss={args.loss_type} is_level={args.importance_sampling_level} eps={args.epsilon}/{args.epsilon_high}"
+    )
 
     # Lazy heavy imports
     from datasets import Dataset
@@ -194,6 +234,7 @@ def main() -> None:
         pathlib.Path(args.public),
         pathlib.Path(args.val) if args.val else None,
         args.max_prompts,
+        pathlib.Path(args.pool) if args.pool else None,
     )
     print(f"[grpo] train prompts: {len(train_rows)}")
     train_ds = Dataset.from_list(train_rows)
@@ -219,15 +260,21 @@ def main() -> None:
         ],
     )
 
-    # GRPO config
+    # GRPO config — fixes after first run failed (see HANDOFF):
+    #   - constant lr (was cosine→2e-11), higher base lr 1e-5 (was 3e-6)
+    #   - temperature 1.0 (was 0.7) → more variance per group → non-zero advantage
+    #   - dr_grpo loss (was dapo) → length-normalized, prevents 4070→2574 collapse
+    #   - sequence-level importance sampling → stabler than token-level under vLLM colocate
+    #   - asymmetric clipping eps_high=0.4 → allow larger updates on positive advantage
+    #   - beta=0.0 (was 0.04) → no KL drag, drift freely from LoRA-v1 base
     grpo_config_kwargs = dict(
         output_dir=args.output,
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.lr,
-        lr_scheduler_type="cosine",
-        warmup_ratio=0.05,
+        lr_scheduler_type=args.lr_scheduler,
+        warmup_ratio=args.warmup_ratio,
         bf16=True,
         # GRPO-specific
         num_generations=args.num_generations,
@@ -235,6 +282,12 @@ def main() -> None:
         max_completion_length=args.max_completion_length,
         temperature=args.temperature,
         top_p=args.top_p,
+        loss_type=args.loss_type,
+        importance_sampling_level=args.importance_sampling_level,
+        epsilon=args.epsilon,
+        epsilon_high=args.epsilon_high,
+        top_entropy_quantile=args.top_entropy_quantile,
+        scale_rewards="none",  # Dr.GRPO recommends no group-std normalization (was 'group')
         # Standard
         logging_steps=5,
         save_strategy="epoch",
@@ -250,6 +303,11 @@ def main() -> None:
             vllm_gpu_memory_utilization=0.4,  # leave room for trainer's policy + ref
             vllm_max_model_length=8192,  # prompt + completion
         )
+        if args.disable_vllm_is_correction:
+            # Default sequence_mask correction multiplies per-token logp diffs
+            # across the full completion. With ~5000-token completions and 0.015
+            # nat/tok diff, the cumulative ratio collapses to ~exp(-75) ≈ 0.
+            grpo_config_kwargs["vllm_importance_sampling_correction"] = False
     grpo_config = GRPOConfig(**grpo_config_kwargs)
 
     # GRPOTrainer
