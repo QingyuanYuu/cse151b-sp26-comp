@@ -1,0 +1,32 @@
+[chain] Waiting for lora_weights/runj_grpo_v2_merged to exist...
+[chain] Merged model present: lora_weights/runj_grpo_v2_merged
+
+[chain] === val_k1 K=1 starting 00:43:03 ===
+[chain] val_k1 done 01:01:16
+[sc] Done in 17.8 min total.
+[sc] Accuracy: 144/225 = 64.00%
+
+[chain] === public_k1 K=1 starting 01:01:16 ===
+[chain] public_k1 done 02:26:27
+[sc] Done in 84.9 min total.
+[sc] Accuracy: 746/1126 = 66.25%
+
+[chain] === private_k8 K=8 starting 02:26:27 ===
+[chain] private_k8 done 06:55:09
+[sc] Done in 268.5 min total.
+
+[chain] === build CSV 06:55:09 ===
+Wrote 943 rows → submissions/grpo_v2_private_k8.csv
+Rows with \boxed{}: 923/943
+
+[chain] === val accuracy comparison 06:55:09 ===
+  Run F K=1              141/225 = 62.67%
+  LoRA v2 K=1            145/225 = 64.44%
+  GRPO v1 K=1            136/225 = 60.44%
+  GRPO v2 K=1 ★          144/225 = 64.00%
+
+[chain] === public accuracy 06:55:09 ===
+GRPO v2 public K=1: 746/1126 = 66.25%
+
+[chain] === DONE 06:55:09 ===
+[chain] All inference + CSV ready. Next: review + git commit+push (manual step).
