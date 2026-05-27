@@ -34,8 +34,12 @@ def parse_args():
     p.add_argument("--epochs", type=float, default=5.0)
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--max-seq", type=int, default=8192)
-    p.add_argument("--per-device-bsz", type=int, default=4)
-    p.add_argument("--grad-accum", type=int, default=2)
+    p.add_argument("--per-device-bsz", type=int, default=2,
+                   help="2 is safe on H100 80GB with seq=8192. Try 4 if you have memory headroom")
+    p.add_argument("--grad-accum", type=int, default=4,
+                   help="Effective bsz = per_device_bsz × grad_accum (target 8)")
+    p.add_argument("--grad-checkpoint", action="store_true",
+                   help="Enable gradient checkpointing (safer but slower). Default off on H100.")
     p.add_argument("--save-steps", type=int, default=50)
     p.add_argument("--logging-steps", type=int, default=5)
     p.add_argument("--seed", type=int, default=42)
@@ -87,7 +91,7 @@ def main():
         max_steps=args.max_steps,
         per_device_train_batch_size=args.per_device_bsz,
         gradient_accumulation_steps=args.grad_accum,
-        gradient_checkpointing=False,  # H100 has memory, skip checkpointing for speed
+        gradient_checkpointing=args.grad_checkpoint,
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
         warmup_ratio=0.05,

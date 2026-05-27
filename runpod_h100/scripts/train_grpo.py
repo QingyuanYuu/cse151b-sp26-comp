@@ -1,9 +1,10 @@
-"""GRPO training on H100 using grpo_train_extended_v4.jsonl (301 prompts).
+"""GRPO training on H100 using grpo_train_extended_v6.jsonl (305 prompts).
 
-This is a port of the original train_grpo.py adapted for our extended dataset:
-  - 196 public edge-filtered (real gold)
-  - 80 verified private uncertain
-  - 25 hybrid+solved dual-verified
+Dataset composition:
+  - 196 public edge-filtered (real gold from public.jsonl)
+  - 80 verified private uncertain (hand-verified + Judger-friendly format)
+  - 25 hybrid+solved dual-verified (two independent pipelines agree)
+  - 4 lora_solved hand-verified (single-pipeline labels, hand-verified by sympy)
 
 Uses our merged LoRA SFT model as base (or the v3.5 merged from local).
 
@@ -26,7 +27,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 
 def _load_dataset(jsonl_path: pathlib.Path, max_prompts: int | None = None) -> list[dict]:
-    """Load grpo_train_extended_v4.jsonl format.
+    """Load grpo_train_extended_v6.jsonl format.
 
     Each row already has: id, source, prompt (chat messages), answer (json), options (json).
     """
@@ -90,8 +91,8 @@ def _make_reward_fn():
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--base", required=True, help="Base merged model path")
-    p.add_argument("--output", default=str(REPO / "checkpoints" / "grpo_v4"))
-    p.add_argument("--data", default=str(REPO / "data" / "grpo_train_extended_v4.jsonl"))
+    p.add_argument("--output", default=str(REPO / "checkpoints" / "grpo_v6"))
+    p.add_argument("--data", default=str(REPO / "data" / "grpo_train_extended_v6.jsonl"))
     p.add_argument("--num-generations", type=int, default=4)
     p.add_argument("--epochs", type=float, default=3.0)
     p.add_argument("--lr", type=float, default=1e-5)

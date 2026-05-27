@@ -6,7 +6,7 @@ Self-contained training pipeline for **Qwen3-4B-Thinking-2507** on H100 80GB.
 Pipeline:
   1. BF16 LoRA SFT       (~1.5h, $3)   ← lora_sft_h100
   2. Merge to BF16        (~5 min)      ← lora_sft_merged
-  3. GRPO on top of SFT  (~13-16h, $30) ← grpo_v4
+  3. GRPO on top of SFT  (~13-16h, $30) ← grpo_v6
   4. Download adapter, run inference locally
 ```
 
@@ -71,10 +71,10 @@ python scripts/merge_lora.py
 ```bash
 python scripts/train_grpo.py \
     --base checkpoints/lora_sft_merged \
-    --output checkpoints/grpo_v4 \
+    --output checkpoints/grpo_v6 \
     --epochs 3 \
     --num-generations 4
-# Output: checkpoints/grpo_v4/final/  (LoRA adapter ~250 MB)
+# Output: checkpoints/grpo_v6/final/  (LoRA adapter ~250 MB)
 ```
 
 In background:
@@ -88,16 +88,16 @@ tail -f logs/grpo.log
 After GRPO completes, download just the adapter (~250 MB):
 ```bash
 # On RunPod, compress
-tar czf grpo_v4_adapter.tar.gz checkpoints/grpo_v4/final/
+tar czf grpo_v6_adapter.tar.gz checkpoints/grpo_v6/final/
 
 # Download via runpodctl or scp to your local machine
-runpodctl send grpo_v4_adapter.tar.gz
+runpodctl send grpo_v6_adapter.tar.gz
 ```
 
 Or push to HuggingFace Hub:
 ```bash
 huggingface-cli login
-huggingface-cli upload <your-username>/qlora-cse151b-grpo-v4 checkpoints/grpo_v4/final/
+huggingface-cli upload <your-username>/qlora-cse151b-grpo-v6 checkpoints/grpo_v6/final/
 ```
 
 ---
@@ -112,7 +112,7 @@ runpod_h100/
 ├── src/                                   ← cse151b_comp modules (prompts, evaluate, etc.)
 ├── data/
 │   ├── h100_lora_sft.jsonl                ← 737 SFT training pairs (Run F prompts applied)
-│   ├── grpo_train_extended_v4.jsonl       ← 301 GRPO prompts (196 public + 105 private verified)
+│   ├── grpo_train_extended_v6.jsonl       ← 305 GRPO prompts (196 public + 109 private verified)
 │   ├── grpo_pool_v2.json                  ← 196 public edge-filtered IDs (reference)
 │   ├── val_indices.json                   ← 225 val IDs (for evaluation)
 │   ├── public.jsonl                       ← public train+val 1126 questions
@@ -120,7 +120,7 @@ runpod_h100/
 └── scripts/
     ├── train_lora_bf16.py                 ← BF16 LoRA SFT
     ├── merge_lora.py                      ← merge adapter into base
-    └── train_grpo.py                      ← GRPO with v4 data
+    └── train_grpo.py                      ← GRPO with v6 data
 ```
 
 ---
@@ -173,13 +173,17 @@ runpod_h100/
 
 All formatted with **Run F prompt template** (build_prompt_runf from src/cse151b_comp/prompts.py).
 
-### GRPO data (`grpo_train_extended_v4.jsonl`, 301 rows)
+### GRPO data (`grpo_train_extended_v6.jsonl`, 305 rows)
 
 ```
 196 public_edge_filtered (1-3/K samples correct on K=32 SC; real gold)
- 80 private_verified_uncertain (model uncertain + manually verified; judge-friendly format)
- 25 private_hybrid_solved_agree (dual verification)
+ 80 private_verified_uncertain (hand-verified, sympy-validated, Judger-friendly format)
+ 25 private_hybrid_solved_agree (dual-pipeline verification)
+  4 private_lora_solved_hand_verified (single-pipeline + sympy hand-verification)
 ```
+
+v6 fixes vs v4: 3 content errors (ID 60, 281, 902), 2 atom-split bugs (ID 473, 396),
+4 new high-confidence problems from the 140-solved subset.
 
 ---
 
@@ -238,7 +242,7 @@ H200 141GB @ $3-5/h:
 
 Once you have the GRPO adapter:
 
-1. **Download `checkpoints/grpo_v4/final/`** to local machine
+1. **Download `checkpoints/grpo_v6/final/`** to local machine
 2. **Merge GRPO adapter** with SFT-merged base (or use PEFT directly in vLLM)
 3. **Run inference on private** with K=8 SC + Run F prompt + Judger-friendly extraction
 4. **Generate `submission.csv`**
