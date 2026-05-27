@@ -1,0 +1,18 @@
+# H100 training requirements
+# Tested on RunPod CUDA 12.4 / 12.6 images
+
+torch>=2.4.0
+transformers>=4.45.0,<4.60.0
+peft>=0.13.0
+trl>=0.12.0,<2.0.0
+datasets>=3.0.0
+accelerate>=1.0.0
+bitsandbytes>=0.44.0
+vllm>=0.7.0
+flash-attn>=2.6.0 --no-build-isolation
+sympy>=1.13.0
+numpy>=1.26.0
+huggingface-hub>=0.26.0
+
+# For Judger
+antlr4-python3-runtime==4.11
