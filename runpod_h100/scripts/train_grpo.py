@@ -105,6 +105,10 @@ def main() -> None:
     p.add_argument("--beta", type=float, default=0.0, help="KL penalty coefficient")
     p.add_argument("--epsilon", type=float, default=0.3)
     p.add_argument("--epsilon-high", type=float, default=0.4)
+    p.add_argument("--importance-sampling-level", default="sequence",
+                   help="'sequence' is stabler than 'token' under vLLM colocate (Blackwell GRPO v2 used this)")
+    p.add_argument("--scale-rewards", default="none",
+                   help="dr_grpo recommends 'none' to avoid group-std normalization canceling signal")
     args = p.parse_args()
 
     from transformers import AutoTokenizer
@@ -167,6 +171,8 @@ def main() -> None:
         epsilon_high=args.epsilon_high,
         beta=args.beta,
         loss_type="dr_grpo",
+        importance_sampling_level=args.importance_sampling_level,  # sequence-level IS
+        scale_rewards=args.scale_rewards,                          # 'none' for dr_grpo
         # vLLM for fast generation
         use_vllm=True,
         vllm_mode="colocate",
