@@ -9,7 +9,10 @@ datasets>=3.0.0
 accelerate>=1.0.0
 bitsandbytes>=0.44.0
 vllm>=0.7.0
-flash-attn>=2.6.0 --no-build-isolation
+# flash-attn is OPTIONAL — train_lora_bf16.py auto-falls-back to SDPA if not installed.
+# DO NOT add `flash-attn` here: pip cannot parse --no-build-isolation in requirements.txt,
+# and compiling from source on RunPod typically takes 30-60 min and OOMs.
+# To enable FA2 (~15-25% SFT speedup), install the prebuilt wheel separately — see README.
 sympy>=1.13.0
 numpy>=1.26.0
 huggingface-hub>=0.26.0
