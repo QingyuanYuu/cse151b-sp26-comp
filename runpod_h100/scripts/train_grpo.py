@@ -26,10 +26,23 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "src"))
 
 
-def _load_dataset(jsonl_path: pathlib.Path, max_prompts: int | None = None) -> list[dict]:
+def _load_dataset(
+    jsonl_path: pathlib.Path,
+    max_prompts: int | None = None,
+    hard_pool_path: pathlib.Path | None = None,
+    hard_dup: int = 0,
+) -> list[dict]:
     """Load grpo_train_extended_v6.jsonl format.
 
     Each row already has: id, source, prompt (chat messages), answer (json), options (json).
+
+    If `hard_pool_path` is provided AND `hard_dup > 0`, prompts whose pid (parsed from
+    "public_<pid>" id field) is in the hard set are duplicated `hard_dup` extra times.
+    This emulates "higher K for hard prompts" since TRL's num_generations is global.
+
+    Examples:
+      hard_dup=1 → hard prompts visited 2× per epoch → effective K_hard = 2 × global K
+      hard_dup=0 → no duplication, all prompts visited once
     """
     rows = [json.loads(line) for line in open(jsonl_path)]
     if max_prompts:
@@ -41,6 +54,30 @@ def _load_dataset(jsonl_path: pathlib.Path, max_prompts: int | None = None) -> l
         src_counts[src] = src_counts.get(src, 0) + 1
     for s, n in src_counts.items():
         print(f"  {s:<40s} {n}")
+
+    if hard_pool_path and hard_dup > 0:
+        with open(hard_pool_path) as f:
+            hard_ids = set(json.load(f)["hard_ids"])
+        n_dup = 0
+        extra = []
+        for r in rows:
+            # Hard IDs live in the PUBLIC namespace only. Private prompts have a
+            # separate integer ID space — must not match them.
+            rid = r.get("id", "")
+            if not rid.startswith("public_"):
+                continue
+            try:
+                pid = int(rid[len("public_"):])
+            except ValueError:
+                continue
+            if pid in hard_ids:
+                for _ in range(hard_dup):
+                    extra.append(r)
+                n_dup += 1
+        rows = rows + extra
+        print(f"[grpo] hard-pool boost: {n_dup} hard prompts duplicated {hard_dup}× → "
+              f"+{len(extra)} extra rows; total now {len(rows)}")
+        print(f"[grpo] effective K on hard = {hard_dup + 1} × global_K")
     return rows
 
 
@@ -77,8 +114,11 @@ def _make_reward_fn():
                 opt = json.loads(opt_str) if opt_str else None
                 text = c[-1].get("content", "") if isinstance(c, list) and c and isinstance(c[0], dict) else c
                 base = _judge_with_timeout(text, ans, opt, timeout=15)
-                # Length-aware: penalize too-short correct answers (anti-collapse)
-                if base > 0.5 and len(text) < 2000:
+                # Length-aware anti-collapse — only on free-response (MCQ exempt).
+                # MCQ correct answers like "C" or "C, A" have intrinsically short
+                # reasoning; penalizing them encourages padding/hallucinated steps.
+                is_mcq = bool(opt)
+                if base > 0.5 and not is_mcq and len(text) < 2000:
                     base = 0.5
                 rewards.append(base)
             except Exception:
@@ -93,7 +133,16 @@ def main() -> None:
     p.add_argument("--base", required=True, help="Base merged model path")
     p.add_argument("--output", default=str(REPO / "checkpoints" / "grpo_v6"))
     p.add_argument("--data", default=str(REPO / "data" / "grpo_train_extended_v6.jsonl"))
-    p.add_argument("--num-generations", type=int, default=4)
+    p.add_argument("--num-generations", type=int, default=4,
+                   help="K rollouts per prompt. With --hard-dup 1 (default), hard subset is "
+                        "duplicated → hard K_eff = 8, rest K = 4. To go uniform K=6, set this 6 "
+                        "and --hard-dup 0.")
+    p.add_argument("--hard-pool",
+                   default=str(REPO / "data" / "hard_prompt_ids.json"),
+                   help="JSON with {'hard_ids': [...]} marking sparse-reward prompts to duplicate.")
+    p.add_argument("--hard-dup", type=int, default=1,
+                   help="Extra copies of each hard prompt in training data. 1 means visited 2× per "
+                        "epoch (effective K = 2 × global). Set 0 to disable.")
     p.add_argument("--epochs", type=float, default=3.0)
     p.add_argument("--lr", type=float, default=1e-5)
     p.add_argument("--temperature", type=float, default=1.0)
@@ -101,10 +150,20 @@ def main() -> None:
     p.add_argument("--max-completion-length", type=int, default=6144)
     p.add_argument("--max-prompt-length", type=int, default=2048)
     p.add_argument("--per-device-bsz", type=int, default=1)
-    p.add_argument("--grad-accum", type=int, default=8, help="Must be divisible by num_generations")
-    p.add_argument("--beta", type=float, default=0.0, help="KL penalty coefficient")
+    p.add_argument("--grad-accum", type=int, default=8,
+                   help="Must be divisible by num_generations. 8 with K=8 → 1 fwd accumulation per update; "
+                        "use 16 with K=8 if you want 2 unique prompts per gradient step.")
+    p.add_argument("--beta", type=float, default=0.04,
+                   help="KL penalty toward reference policy. 0.04 lightly anchors a Thinking model "
+                        "to its SFT distribution, preventing collapse of long reasoning chains.")
     p.add_argument("--epsilon", type=float, default=0.3)
     p.add_argument("--epsilon-high", type=float, default=0.4)
+    p.add_argument("--warmup-ratio", type=float, default=0.05,
+                   help="Linear warmup over first 5% of steps. Avoids early-step gradient spikes.")
+    p.add_argument("--save-steps", type=int, default=20,
+                   help="Save checkpoint every N steps. With ~114 total steps, 20 → 5-6 checkpoints.")
+    p.add_argument("--save-total-limit", type=int, default=10,
+                   help="Keep up to 10 checkpoints so you can pick the best by val accuracy post-train.")
     p.add_argument("--importance-sampling-level", default="sequence",
                    help="'sequence' is stabler than 'token' under vLLM colocate (Blackwell GRPO v2 used this)")
     p.add_argument("--scale-rewards", default="none",
@@ -121,7 +180,13 @@ def main() -> None:
         tok.pad_token = tok.eos_token
 
     print(f"Loading training data: {args.data}")
-    rows = _load_dataset(pathlib.Path(args.data), args.max_prompts)
+    hp = pathlib.Path(args.hard_pool) if args.hard_pool else None
+    rows = _load_dataset(
+        pathlib.Path(args.data),
+        args.max_prompts,
+        hard_pool_path=hp if hp and hp.exists() else None,
+        hard_dup=args.hard_dup,
+    )
 
     # Build HF dataset
     from datasets import Dataset
@@ -151,16 +216,17 @@ def main() -> None:
         gradient_accumulation_steps=args.grad_accum,
         gradient_checkpointing=True,
         learning_rate=args.lr,
-        lr_scheduler_type="constant",
-        warmup_ratio=0.0,
+        lr_scheduler_type="constant_with_warmup",
+        warmup_ratio=args.warmup_ratio,
         weight_decay=0.0,
         bf16=True,
         optim="adamw_torch",
         logging_steps=1,
-        save_steps=50,
-        save_total_limit=3,
+        save_steps=args.save_steps,
+        save_total_limit=args.save_total_limit,
         save_strategy="steps",
-        report_to=[],
+        report_to=["tensorboard"],
+        logging_dir=str(pathlib.Path(args.output) / "logs"),
         seed=42,
         # GRPO-specific
         num_generations=args.num_generations,
