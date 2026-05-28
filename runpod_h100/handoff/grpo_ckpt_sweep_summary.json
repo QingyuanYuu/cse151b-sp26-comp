@@ -1,0 +1,160 @@
+{
+  "ranked": [
+    {
+      "label": "step-606",
+      "adapter_path": "checkpoints/grpo_v6/checkpoint-606",
+      "n": 225,
+      "n_correct": 149,
+      "overall_acc": 0.6622222222222223,
+      "gen_time_s": 567.1859691143036,
+      "by_type": {
+        "mcq": 0.7733333333333333,
+        "free_single": 0.6567164179104478,
+        "free_multi": 0.5662650602409639
+      }
+    },
+    {
+      "label": "final",
+      "adapter_path": "checkpoints/grpo_v6/final",
+      "n": 225,
+      "n_correct": 149,
+      "overall_acc": 0.6622222222222223,
+      "gen_time_s": 522.9247779846191,
+      "by_type": {
+        "mcq": 0.7866666666666666,
+        "free_single": 0.6417910447761194,
+        "free_multi": 0.5662650602409639
+      }
+    },
+    {
+      "label": "step-460",
+      "adapter_path": "checkpoints/grpo_v6/checkpoint-460",
+      "n": 225,
+      "n_correct": 148,
+      "overall_acc": 0.6577777777777778,
+      "gen_time_s": 524.4078869819641,
+      "by_type": {
+        "mcq": 0.7733333333333333,
+        "free_single": 0.6268656716417911,
+        "free_multi": 0.5783132530120482
+      }
+    },
+    {
+      "label": "step-540",
+      "adapter_path": "checkpoints/grpo_v6/checkpoint-540",
+      "n": 225,
+      "n_correct": 148,
+      "overall_acc": 0.6577777777777778,
+      "gen_time_s": 487.6392593383789,
+      "by_type": {
+        "mcq": 0.7733333333333333,
+        "free_single": 0.6417910447761194,
+        "free_multi": 0.5662650602409639
+      }
+    },
+    {
+      "label": "step-560",
+      "adapter_path": "checkpoints/grpo_v6/checkpoint-560",
+      "n": 225,
+      "n_correct": 147,
+      "overall_acc": 0.6533333333333333,
+      "gen_time_s": 501.1081750392914,
+      "by_type": {
+        "mcq": 0.7466666666666667,
+        "free_single": 0.6417910447761194,
+        "free_multi": 0.5783132530120482
+      }
+    },
+    {
+      "label": "step-500",
+      "adapter_path": "checkpoints/grpo_v6/checkpoint-500",
+      "n": 225,
+      "n_correct": 146,
+      "overall_acc": 0.6488888888888888,
+      "gen_time_s": 488.7136986255646,
+      "by_type": {
+        "mcq": 0.7733333333333333,
+        "free_single": 0.6417910447761194,
+        "free_multi": 0.5421686746987951
+      }
+    },
+    {
+      "label": "step-440",
+      "adapter_path": "checkpoints/grpo_v6/checkpoint-440",
+      "n": 225,
+      "n_correct": 145,
+      "overall_acc": 0.6444444444444445,
+      "gen_time_s": 510.0727376937866,
+      "by_type": {
+        "mcq": 0.7733333333333333,
+        "free_single": 0.6268656716417911,
+        "free_multi": 0.5421686746987951
+      }
+    },
+    {
+      "label": "step-600",
+      "adapter_path": "checkpoints/grpo_v6/checkpoint-600",
+      "n": 225,
+      "n_correct": 144,
+      "overall_acc": 0.64,
+      "gen_time_s": 482.49884510040283,
+      "by_type": {
+        "mcq": 0.7733333333333333,
+        "free_single": 0.6268656716417911,
+        "free_multi": 0.5301204819277109
+      }
+    },
+    {
+      "label": "step-480",
+      "adapter_path": "checkpoints/grpo_v6/checkpoint-480",
+      "n": 225,
+      "n_correct": 143,
+      "overall_acc": 0.6355555555555555,
+      "gen_time_s": 504.4176392555237,
+      "by_type": {
+        "mcq": 0.7466666666666667,
+        "free_single": 0.6417910447761194,
+        "free_multi": 0.5301204819277109
+      }
+    },
+    {
+      "label": "step-520",
+      "adapter_path": "checkpoints/grpo_v6/checkpoint-520",
+      "n": 225,
+      "n_correct": 141,
+      "overall_acc": 0.6266666666666667,
+      "gen_time_s": 540.2823166847229,
+      "by_type": {
+        "mcq": 0.72,
+        "free_single": 0.6268656716417911,
+        "free_multi": 0.5421686746987951
+      }
+    },
+    {
+      "label": "step-580",
+      "adapter_path": "checkpoints/grpo_v6/checkpoint-580",
+      "n": 225,
+      "n_correct": 141,
+      "overall_acc": 0.6266666666666667,
+      "gen_time_s": 559.3089241981506,
+      "by_type": {
+        "mcq": 0.7066666666666667,
+        "free_single": 0.6268656716417911,
+        "free_multi": 0.5542168674698795
+      }
+    }
+  ],
+  "best": {
+    "label": "step-606",
+    "adapter_path": "checkpoints/grpo_v6/checkpoint-606",
+    "n": 225,
+    "n_correct": 149,
+    "overall_acc": 0.6622222222222223,
+    "gen_time_s": 567.1859691143036,
+    "by_type": {
+      "mcq": 0.7733333333333333,
+      "free_single": 0.6567164179104478,
+      "free_multi": 0.5662650602409639
+    }
+  }
+}

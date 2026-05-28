@@ -23,7 +23,10 @@ def write_csv(rows: list[dict], out_path: pathlib.Path) -> None:
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
         writer.writerow(["id", "response"])
         for r in rows:
-            writer.writerow([r["id"], r.get("response", "")])
+            # K=1 inference writes "response"; self-consistency writes
+            # "winning_response" (the vote-winning trace). Accept either.
+            resp = r.get("response") or r.get("winning_response", "")
+            writer.writerow([r["id"], resp])
 
 
 def sanity_check(out_path: pathlib.Path) -> dict:
