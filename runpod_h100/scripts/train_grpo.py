@@ -147,8 +147,13 @@ def main() -> None:
     p.add_argument("--lr", type=float, default=1e-5)
     p.add_argument("--temperature", type=float, default=1.0)
     p.add_argument("--max-prompts", type=int, default=None)
-    p.add_argument("--max-completion-length", type=int, default=6144)
-    p.add_argument("--max-prompt-length", type=int, default=2048)
+    p.add_argument("--max-completion-length", type=int, default=10240,
+                   help="Max generated tokens per rollout. 6144 was too tight: SFT data has "
+                        "P85≈8K and P90≈12K response lengths, so 6144 was truncating most hard-prompt "
+                        "rollouts before they could write \\boxed{}. 10240 covers P85 reasoning, "
+                        "+~2h training time. vllm_max_model_len auto-derives from this + max_prompt.")
+    p.add_argument("--max-prompt-length", type=int, default=2048,
+                   help="Run F system + question fit easily (median ~400 tokens). Don't increase.")
     p.add_argument("--per-device-bsz", type=int, default=1)
     p.add_argument("--grad-accum", type=int, default=8,
                    help="Must be divisible by num_generations. 8 with K=8 → 1 fwd accumulation per update; "

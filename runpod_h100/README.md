@@ -6,7 +6,7 @@ Self-contained training pipeline for **Qwen3-4B-Thinking-2507** on H100 80GB.
 Pipeline:
   1. BF16 LoRA SFT       (~1.5h, $3)   ← lora_sft_h100
   2. Merge to BF16        (~5 min)      ← lora_sft_merged
-  3. GRPO on top of SFT  (~17h, $35) ← grpo_v6 (K=4 + hard-dup, beta=0.04)
+  3. GRPO on top of SFT  (~19h, $39) ← grpo_v6 (K=4 + hard-dup, beta=0.04, max_comp=10240)
   4. Download adapter, run inference locally
 ```
 
@@ -184,10 +184,13 @@ runpod_h100/
 | Batch | 1 × grad_accum=8 = 8 effective | divisible by num_generations |
 | LR | 1e-5 constant_with_warmup, warmup 5% | warmup avoids early gradient spike |
 | Reward | Judger binary + length penalty | 1.0 / 0.5 / 0 — **MCQ exempt from length penalty** |
+| max_completion_length | **10240** | covers P85 of SFT reasoning lengths; 6144 was truncating hard prompts before \boxed{} |
+| max_prompt_length | 2048 | Run F + question fit; don't change |
+| vllm_max_model_len | **12288** (auto = 2048+10240) | total context budget per rollout |
 | Checkpointing | save every 20 steps, keep 10 | for post-hoc best-checkpoint selection |
 | Monitoring | TensorBoard | `tensorboard --logdir checkpoints/grpo_v6/logs` |
 | Epochs | 3 | ~152 total steps for 405 rows × 3 / batch 8 (after dup) |
-| Expected time | **~17h on H100 PCIe** | hard prompts get 2× attention without K=8 uniform cost |
+| Expected time | **~19h on H100 PCIe** | hard prompts get 2× attention + longer reasoning budget |
 
 ### Why "hard-pool dup" instead of K=8 uniform?
 
@@ -276,9 +279,9 @@ For reference, the original Blackwell training achieved:
 H100 PCIe 80GB @ $2/h (default: K=4 + hard-dup 1, beta=0.04):
   - SFT 1.5h:     $3
   - Merge:        $0.10
-  - GRPO ~17h:    $35
+  - GRPO ~19h:    $39
   ────────────────
-  Total:          ~$38
+  Total:          ~$45
 
 H200 141GB @ $3-5/h:
   - Full pipeline ~12-15h: $36-75 (faster but pricier)
