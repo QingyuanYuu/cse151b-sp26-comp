@@ -144,10 +144,11 @@ def main() -> None:
                    help="Extra copies of each hard prompt in training data. 1 means visited 2× per "
                         "epoch (effective K = 2 × global). Set 0 to disable.")
     p.add_argument("--epochs", type=float, default=3.0)
+    p.add_argument("--max-steps", type=int, default=-1, help="-1 = use epochs")
     p.add_argument("--lr", type=float, default=1e-5)
     p.add_argument("--temperature", type=float, default=1.0)
     p.add_argument("--max-prompts", type=int, default=None)
-    p.add_argument("--max-completion-length", type=int, default=14336,
+    p.add_argument("--max-completion-length", type=int, default=10240,
                    help="Max generated tokens per rollout. vLLM stops at EOS first, so longer cap "
                         "only costs time on long-reasoning prompts (the ~7%% with natural length "
                         "10K-14K). Covers P95 of SFT response distribution. 14336 rescues hard-pool "
@@ -174,7 +175,10 @@ def main() -> None:
                    help="'sequence' is stabler than 'token' under vLLM colocate (Blackwell GRPO v2 used this)")
     p.add_argument("--scale-rewards", default="none",
                    help="dr_grpo recommends 'none' to avoid group-std normalization canceling signal")
-    p.add_argument("--vllm-gpu-memory-utilization", type=float, default=0.5,
+    p.add_argument("--resume", action="store_true",
+                   help="Auto-resume from latest checkpoint in --output (after OOM/crash). "
+                        "Requires at least one saved checkpoint (save_steps=20 default).")
+    p.add_argument("--vllm-gpu-memory-utilization", type=float, default=0.35,
                    help="Fraction of GPU vLLM is allowed to grab in colocate mode. TRL default "
                         "(0.9) leaves only 8 GB for training — works for beta=0 but OOMs at beta>0 "
                         "since ref-model forward needs +2-3 GB. 0.5 gives 40 GB to training "
@@ -224,6 +228,7 @@ def main() -> None:
     grpo_cfg = GRPOConfig(
         output_dir=args.output,
         num_train_epochs=args.epochs,
+        max_steps=args.max_steps,
         per_device_train_batch_size=args.per_device_bsz,
         gradient_accumulation_steps=args.grad_accum,
         gradient_checkpointing=True,
@@ -244,7 +249,6 @@ def main() -> None:
         num_generations=args.num_generations,
         temperature=args.temperature,
         max_completion_length=args.max_completion_length,
-        max_prompt_length=args.max_prompt_length,
         epsilon=args.epsilon,
         epsilon_high=args.epsilon_high,
         beta=args.beta,
@@ -254,6 +258,7 @@ def main() -> None:
         # vLLM for fast generation
         use_vllm=True,
         vllm_mode="colocate",
+        vllm_max_model_length=args.max_completion_length + args.max_prompt_length,
         vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
     )
 
@@ -269,7 +274,7 @@ def main() -> None:
     )
 
     print("Starting GRPO training...")
-    trainer.train()
+    trainer.train(resume_from_checkpoint=args.resume or None)
 
     final = pathlib.Path(args.output) / "final"
     final.mkdir(parents=True, exist_ok=True)
