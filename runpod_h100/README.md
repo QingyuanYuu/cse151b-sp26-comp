@@ -6,7 +6,7 @@ Self-contained training pipeline for **Qwen3-4B-Thinking-2507** on H100 80GB.
 Pipeline:
   1. BF16 LoRA SFT       (~1.5h, $3)   ← lora_sft_h100
   2. Merge to BF16        (~5 min)      ← lora_sft_merged
-  3. GRPO on top of SFT  (~13-16h, $30) ← grpo_v6
+  3. GRPO on top of SFT  (~17h, $35) ← grpo_v6 (K=4 + hard-dup, beta=0.04)
   4. Download adapter, run inference locally
 ```
 
@@ -33,10 +33,36 @@ cd cse151b/runpod_h100
 
 ```bash
 pip install -r requirements.txt
-# May need: pip install flash-attn --no-build-isolation
-# Verify:
+# Verify base stack:
 python -c "import torch, peft, trl, vllm; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 ```
+
+#### flash-attn (OPTIONAL — pipeline auto-falls-back to SDPA)
+
+The SFT script tries to import `flash_attn` and gracefully falls back to PyTorch SDPA if
+not available. SDPA is **85–95% as fast as FA2 on H100 for 4B models** — for a 1.5h SFT
+job, the difference is ~10–20 min. No reason to compile from source.
+
+If you want the speedup anyway, **install a prebuilt wheel** (instant, no compile):
+
+```bash
+# Step 1: check your env
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda)"
+python --version
+
+# Step 2: match a wheel from https://github.com/Dao-AILab/flash-attention/releases
+# Naming: flash_attn-<ver>+cu<CUDA>torch<TORCH>cxx11abiFALSE-cp<PYVER>-cp<PYVER>-linux_x86_64.whl
+#
+# Example for RunPod's PyTorch 2.4 + CUDA 12 + Python 3.11 image:
+pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.4cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+```
+
+**DO NOT** run `pip install flash-attn` (no wheel) — it tries to compile from source,
+takes 30-60 min, often OOMs the build container, and produces broken binaries on
+container/host CUDA mismatches.
+
+If a wheel install fails or the URL 404s, just run the pipeline anyway — SDPA fallback
+is automatic.
 
 ### 4. Run LoRA SFT (1-1.5h)
 
@@ -136,7 +162,7 @@ runpod_h100/
 | LoRA alpha | 128 | 2:1 ratio |
 | Target modules | q,k,v,o,gate,up,down | 7 modules |
 | Batch size | 4 × grad_accum=2 = 8 effective | H100 80GB has headroom |
-| Max seq | 8192 | covers 78% of training data |
+| Max seq | **16384** | rescues 89% of long-reasoning samples (median 11K tokens). +15 min vs 8192. |
 | Epochs | 5 | |
 | LR | 2e-4 cosine, warmup 5% | |
 | Loss | completion_only | only train on response tokens |
@@ -148,16 +174,38 @@ runpod_h100/
 |---|---|---|
 | Base | merged LoRA SFT model | |
 | Adapter on top | LoRA r=32, alpha=64 | smaller for RL stability |
-| K (generations per prompt) | 4 | edge-filtered → meaningful std |
+| K (generations per prompt) | **4 global** | with hard-dup, K_eff = 8 on 100 hard, 4 on rest |
+| Hard-pool dup | **1×** | duplicates 100 all-wrong public IDs in training data |
 | Temperature | 1.0 | high for exploration |
-| Epsilon (DAPO clip) | 0.3 / 0.4 (low/high) | asymmetric |
-| Beta (KL) | 0.0 | no KL drag |
+| Epsilon (DAPO clip) | 0.3 / 0.4 (low/high) | asymmetric — favors positive updates |
+| Beta (KL) | **0.04** | gently anchors Thinking model to SFT to preserve chain-of-thought |
 | Loss type | dr_grpo | length-normalized |
+| IS level | sequence | stabler under vLLM colocate |
 | Batch | 1 × grad_accum=8 = 8 effective | divisible by num_generations |
-| LR | 1e-5 constant | low to avoid catastrophic forget |
-| Reward | course Judger binary + length penalty | 1.0 correct + ≥2000 chars, 0.5 correct + short, 0 wrong |
-| Epochs | 3 | |
-| Expected time | 13-16h on H100 PCIe | |
+| LR | 1e-5 constant_with_warmup, warmup 5% | warmup avoids early gradient spike |
+| Reward | Judger binary + length penalty | 1.0 / 0.5 / 0 — **MCQ exempt from length penalty** |
+| Checkpointing | save every 20 steps, keep 10 | for post-hoc best-checkpoint selection |
+| Monitoring | TensorBoard | `tensorboard --logdir checkpoints/grpo_v6/logs` |
+| Epochs | 3 | ~152 total steps for 405 rows × 3 / batch 8 (after dup) |
+| Expected time | **~17h on H100 PCIe** | hard prompts get 2× attention without K=8 uniform cost |
+
+### Why "hard-pool dup" instead of K=8 uniform?
+
+The 100 all-wrong public prompts are the sparse-reward "frontier": base model fails them
+≥4/4 times under K=4 SC. Giving them K=8 attention (via duplication) doubles their chance
+of getting at least one passing rollout in a group, which is the only way GRPO learns from
+them. Easy prompts already have high pass@4 so giving them K=8 too is wasteful.
+
+Cost comparison (H100 PCIe @ $2/h, 3 epochs):
+
+| Strategy | Hard K | Easy K | gens | Time | Cost |
+|---|---|---|---|---|---|
+| `--hard-dup 1` (default) | 8 | 4 | 4860 | ~17h | $35 |
+| `--hard-dup 0 --num-generations 4` | 4 | 4 | 3660 | ~13h | $26 |
+| `--hard-dup 0 --num-generations 6` | 6 | 6 | 5490 | ~19.5h | $39 |
+| `--hard-dup 0 --num-generations 8` | 8 | 8 | 7320 | ~26h | $52 |
+
+The default (`--hard-dup 1`, K_global=4) is the best signal-per-dollar for our pool composition.
 
 ---
 
@@ -225,15 +273,19 @@ For reference, the original Blackwell training achieved:
 ## Cost Estimate
 
 ```
-H100 PCIe 80GB @ $2/h:
+H100 PCIe 80GB @ $2/h (default: K=4 + hard-dup 1, beta=0.04):
   - SFT 1.5h:     $3
   - Merge:        $0.10
-  - GRPO 13-16h:  $26-32
+  - GRPO ~17h:    $35
   ────────────────
-  Total:          ~$29-35
+  Total:          ~$38
 
 H200 141GB @ $3-5/h:
-  - Full pipeline ~12-18h: $40-90 (faster but pricier)
+  - Full pipeline ~12-15h: $36-75 (faster but pricier)
+
+To revert to old cheap config (K=4 uniform, no KL, no hard-dup):
+  python scripts/train_grpo.py --num-generations 4 --beta 0.0 --hard-dup 0 \
+      --base checkpoints/lora_sft_merged
 ```
 
 ---
