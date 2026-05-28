@@ -174,6 +174,12 @@ def main() -> None:
                    help="'sequence' is stabler than 'token' under vLLM colocate (Blackwell GRPO v2 used this)")
     p.add_argument("--scale-rewards", default="none",
                    help="dr_grpo recommends 'none' to avoid group-std normalization canceling signal")
+    p.add_argument("--vllm-gpu-memory-utilization", type=float, default=0.5,
+                   help="Fraction of GPU vLLM is allowed to grab in colocate mode. TRL default "
+                        "(0.9) leaves only 8 GB for training — works for beta=0 but OOMs at beta>0 "
+                        "since ref-model forward needs +2-3 GB. 0.5 gives 40 GB to training "
+                        "(safe for LoRA + GC + ref + Adam). Drop to 0.35 if still OOM. "
+                        "vLLM only needs ~15 GB for our 4B + K=4 + 16384 ctx, so 0.5 is generous.")
     args = p.parse_args()
 
     from transformers import AutoTokenizer
@@ -248,6 +254,7 @@ def main() -> None:
         # vLLM for fast generation
         use_vllm=True,
         vllm_mode="colocate",
+        vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
     )
 
     reward_fn = _make_reward_fn()
