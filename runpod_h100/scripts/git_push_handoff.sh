@@ -17,10 +17,13 @@ fi
 echo "[git-push] target branch: $BRANCH"
 echo "[git-push] handoff size: $(du -sh "$HANDOFF_DIR" | cut -f1)"
 
-# Bail if individual file > 100 MB (GitHub hard limit). 50 MB shows warning but accepts.
-large=$(find "$HANDOFF_DIR" -type f -size +100M)
+# Bail if a file git would actually track is > 100 MB (GitHub hard limit).
+# Skip gitignored files (e.g. *.safetensors LoRA weights live on HF Hub, not git).
+large=$(find "$HANDOFF_DIR" -type f -size +100M | while read -r f; do
+    git check-ignore -q "$f" || echo "$f"
+done)
 if [[ -n "$large" ]]; then
-    echo "[git-push] ERROR: file > 100 MB (GitHub limit):" >&2
+    echo "[git-push] ERROR: tracked file > 100 MB (GitHub limit):" >&2
     echo "$large" >&2
     exit 1
 fi

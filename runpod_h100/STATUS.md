@@ -1,14 +1,19 @@
-# Pipeline status snapshot — 2026-05-28 03:32
+# Pipeline status snapshot — 2026-05-28 23:59（PIPELINE 完结）
 
 For Claude Code resume / handoff. Read this first.
 
-## TL;DR
+## TL;DR（最新）
 
-- **SFT + Merge + val_225 完成**
-- **val_225 baseline: 64.44%** (Run F prompt, SFT-merged BF16)
-- **GRPO 训练中** — step ~40/606, ETA ~17h
-- 没有阻塞错误
-- 一切都在 `tmux session "grpo"` 里跑
+- **整条 pipeline 跑完**：SFT → Merge → val_225 → GRPO(606 步) → ckpt sweep → merge best → HF 上传 → public K=1 → private SC → CSV
+- **GRPO best ckpt = step-606，val_225 = 66.22%**（SFT baseline 64.44%，+1.78pp）
+- **最终提交 CSV 已生成**：`results/private_submission.csv`（943 行，930 行带 \boxed，10 个截断 MCQ 用 winning_answer 补救）
+- 已 push 到 `origin/runpod-h100-train`（commit fca24c7）；模型在 HF Hub `JaasonYuu/jason-cse151b-model`
+- **⚠️ private SC 实际跑的是 K=4，不是 K=8**（`run_private_sc.sh` banner 写 K=8 但 `--k 4`）。GPU 仍空闲，可补跑 K=8。
+- 用户自己负责传 Kaggle（凭证不在本机）
+
+### 历史快照（2026-05-28 03:32，GRPO 训练中时写的）
+- SFT + Merge + val_225 完成，val baseline 64.44%
+- GRPO step ~40/606 训练中
 
 ## 已完成
 
