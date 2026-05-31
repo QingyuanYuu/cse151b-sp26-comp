@@ -2,8 +2,10 @@
 
 **Team members**: Qingyuan Yu, Chengzhi Zhang, Po-Chen Lin
 **Base model**: `Qwen/Qwen3-4B-Thinking-2507`
-**Final adapters (HuggingFace Hub)**: `JaasonYuu/jason-cse151b-model`
-  — contains both the Phase 2 SFT and Phase 5 GRPO LoRA adapters
+**Final model (HuggingFace Hub)**: `JaasonYuu/jason-cse151b-model`
+  — fully merged BF16 weights (Qwen3-4B-Thinking-2507 + SFT LoRA + GRPO LoRA, all merged)
+**Standalone LoRA adapters (optional, for reproducing intermediate states)**:
+  `JaasonYuu/jason-cse151b-sft-lora` (r=64) and `JaasonYuu/jason-cse151b-grpo-lora` (r=32)
 **Public code repository**: see Gradescope submission link
 **Kaggle private leaderboard**: _to be added after final upload_
 
@@ -623,29 +625,49 @@ in the table above.)
 
 ### Model artifacts on HuggingFace Hub
 
-`JaasonYuu/jason-cse151b-model`:
-- `lora_upload/sft/` — Phase 2 SFT LoRA adapter
-- `lora_upload/grpo/` — Phase 5 GRPO v3 LoRA adapter (step-606)
+Three separate Hub repositories make the full pipeline reproducible. The
+primary artifact (used by `run_inference()`) is the fully merged model; the
+two LoRA adapters are also published for transparency and to allow re-creating
+the intermediate SFT-merged base.
+
+| Repo | Type | Size | Base | Purpose |
+|---|---|---|---|---|
+| `JaasonYuu/jason-cse151b-model` | **Merged BF16 model** | ~7.6 GB | n/a (self-contained) | **Primary** — load directly in `run_inference()`. Contains Qwen3-4B-Thinking-2507 + SFT LoRA + GRPO v3 LoRA (step-606) all merged into a single BF16 checkpoint. |
+| `JaasonYuu/jason-cse151b-sft-lora` | LoRA adapter | ~250 MB | `Qwen/Qwen3-4B-Thinking-2507` | Phase 2 SFT adapter alone (r=64, α=128). Apply on top of base Qwen3-4B-Thinking and merge to reproduce the SFT-merged intermediate state. |
+| `JaasonYuu/jason-cse151b-grpo-lora` | LoRA adapter | ~125 MB | SFT-merged base | Phase 5 GRPO v3 adapter alone (r=32, α=64), the best-by-val_225 step-606 checkpoint. Apply on top of the SFT-merged base to reproduce the final policy. |
+
+For straight inference, the merged model (`JaasonYuu/jason-cse151b-model`) is
+all that is needed — it can be loaded as a single `AutoModelForCausalLM` and
+served via vLLM directly, with no adapter-merging step at runtime.
 
 ### Single-entry-point `run_inference()`
 
 The public submission repository exposes one function that performs the full
 inference pipeline end-to-end. When invoked it:
 
-1. Loads `Qwen/Qwen3-4B-Thinking-2507` (base) from HuggingFace
-2. Loads the Phase 2 SFT LoRA adapter and the Phase 5 GRPO v3 LoRA adapter
-   (step-606) from `JaasonYuu/jason-cse151b-model`
-3. Reads `private.jsonl` (943 prompts)
-4. For each prompt: builds the Run F system + user prompt (auto-selecting MCQ
+1. Loads the fully merged BF16 model `JaasonYuu/jason-cse151b-model` from
+   HuggingFace Hub (no adapter-merging step required at runtime; the model is
+   already Qwen3-4B-Thinking + SFT LoRA + GRPO v3 LoRA all merged)
+2. Reads `private.jsonl` (943 prompts)
+3. For each prompt: builds the Run F system + user prompt (auto-selecting MCQ
    vs free-response variant), generates K=4 samples at temperature 1.0 via
    vLLM
-5. Applies post-processing: boxed extraction, Judger-style normalization,
+4. Applies post-processing: boxed extraction, Judger-style normalization,
    K=4 majority vote, backfill for malformed final-boxed cases
-6. Writes the final `private_submission.csv` in the expected `id,response`
+5. Writes the final `private_submission.csv` in the expected `id,response`
    format
 
 Estimated reproduction time on a single H100 PCIe 80GB: **~30 min** for the
 full 943-prompt private set at K=4 SC.
+
+> If a reviewer wishes to reconstruct the merged model from the LoRA
+> adapters instead (e.g., for transparency or to inspect each phase's
+> contribution), the recipe is:
+> 1. `peft.PeftModel.from_pretrained("Qwen/Qwen3-4B-Thinking-2507", "JaasonYuu/jason-cse151b-sft-lora").merge_and_unload()`
+> 2. Save → SFT-merged BF16 base
+> 3. `peft.PeftModel.from_pretrained(<sft-merged>, "JaasonYuu/jason-cse151b-grpo-lora").merge_and_unload()`
+> 4. The result is byte-equivalent (modulo merge-order float-rounding) to
+>    `JaasonYuu/jason-cse151b-model`.
 
 ---
 
