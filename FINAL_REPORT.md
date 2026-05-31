@@ -23,10 +23,12 @@ We built a five-phase pipeline:
 3. **GRPO v1** — first RL attempt. Silently failed: gradient norm collapsed to
    ~1e-18, val_225 regressed by −2.22 pp. Training aborted; **no usable
    checkpoint**.
-4. **GRPO v2** — second RL attempt with three v1 bugfixes (importance sampling,
-   reward saturation, length collapse). Successful but on a different base
-   model (Qwen3-30B-A3B-Thinking). **val_225: 66.25%**; CSV contributed to a
-   hybrid ensemble baseline.
+4. **GRPO v2** — second RL attempt, applying the three v1 bugfixes
+   (importance sampling, reward saturation, length collapse) on top of the
+   same LoRA-v1 merged 4B base, using the **196-prompt edge-filtered
+   training pool**. Training-loop bugs eliminated; **val_225: 64.00%** (flat
+   vs the LoRA-v1 baseline of 64.44%; the val improvement only materialized
+   in v3).
 5. **GRPO v3** — final RL training on the Phase 2 SFT-merged 4B model with all
    v1/v2 fixes inherited, plus hard-prompt boost, KL anchoring, and corrected
    train/inference prompt alignment. **Best val_225: 66.22%**, +1.78 pp over
@@ -338,9 +340,11 @@ failure modes.
 
 ## Phase 4 — GRPO v2 (Second Attempt, Bugfixes Applied)
 
-This phase succeeded. It was run on the same base model checkpoint as v1
-(Qwen3-30B-A3B-Thinking + lora_v3 adapter) but with the three v1 failure
-modes explicitly addressed.
+This phase succeeded in eliminating all three v1 failure modes, but the
+fixes did not translate to a val_225 improvement at this stage. It was run
+on the **same Qwen3-4B-Thinking-2507 + LoRA-v1 merged base** that GRPO v1
+had used, on the **196-prompt edge-filtered training pool** (96 edge + 100
+random all-wrong, see Fix 1 below), with the three v1 bugfixes applied.
 
 ### Fix 1: Reward saturation → edge filter
 
@@ -393,16 +397,23 @@ The shaper preserves long reasoning chains during RL (anti-collapse).
 
 | Metric | Value |
 |---|---|
-| Training prompts | 196 (edge-filtered) |
-| K rollouts | 8 |
+| Training prompts | 196 (edge-filtered: 96 edge + 100 random all-wrong) |
+| K rollouts during training | 4 (matched v1's smoke-test K, since v1's catastrophic K=8 run had not isolated K from the other failure modes) |
 | Epochs | 3 |
-| Wall clock | ~14–16 h |
-| **val_225 (K=1)** | **66.25%** |
-| MCQ pass-rate vs SFT baseline | recovered to ~74% (was 65% during v1 collapse) |
+| Wall clock | ~14–16 h (configured target on the day) |
+| **val_225 (K=1)** | **64.00%** — flat vs LoRA-v1 baseline 64.44% |
+| Full public K=1 (1126 prompts) | 66.25% (+1.95 pp over LoRA-v1 baseline 64.30%) |
+| MCQ pass-rate vs LoRA-v1 baseline | recovered to ~74% (vs 65% during v1's length-collapse) |
 
-The CSV produced from this run (`grpo_v2_private_k8.csv`) later contributed
-to a hybrid SC ensemble used during prompt-engineering ablations. The Phase 5
-pipeline applied all v1 + v2 fixes from day one.
+The training-loop signals (grad-norm, reward variance, completion length,
+MCQ pass-rate) all stabilized in healthy ranges, confirming the three
+bugfixes were correct. But the val_225 score was essentially flat against
+the LoRA-v1 baseline — the +1.95 pp on the full public set came mostly
+from training-set memorization rather than generalization (the
+held-out val_225 slice barely moved). Closing this generalization gap was
+the explicit motivation for Phase 5: switch to a stronger SFT-merged base,
+add hard-prompt boost, add KL anchoring, and align the train/inference
+prompts.
 
 ---
 
@@ -687,13 +698,16 @@ Phase progression on val_225:
 | 1 | Phase 1 / Run F production prompt (no fine-tune) | **58.67%** | +12 pp |
 | 2 | Phase 2 SFT (Run F prompt) | **64.44%** | +17 pp |
 | 3 | Phase 3 GRPO v1 (cancelled, regressed) | _−2.22 pp vs SFT_ | _−_ |
-| 4 | Phase 4 GRPO v2 (30B base) | **66.25%** | +19 pp |
+| 4 | Phase 4 GRPO v2 (4B + LoRA-v1 merged base, 196 edge-filtered prompts) | **64.00%** (val_225) / 66.25% (full public, training-set-leaky) | +17 pp |
 | 5 | **Phase 5 GRPO v3 (4B, step-606)** | **66.22%** | **+19 pp** |
 
-Phase 5 (4B) reaches essentially the same val_225 as Phase 4 (30B base) with
-**~7.5× fewer parameters**, validating that the small-model + careful
-post-training recipe can match a much larger base model with the same RL
-techniques.
+Phase 5 reaches **+2.22 pp val_225 over Phase 4** on the same 4B model
+family (64.00% → 66.22%). The improvement came from three orthogonal Phase 5
+additions on top of the v2 bugfixes: (a) switching to the SFT-merged base
+trained at max_seq=16384, (b) hard-prompt boost via dataset duplication so
+the 100 most sparse-reward prompts get K_eff=8 worth of rollouts per
+epoch, and (c) re-introducing KL anchoring (β=0.04) to prevent the policy
+from drifting away from the SFT-learned reasoning style.
 
 Per-type breakdown (val_225, step-606):
 
